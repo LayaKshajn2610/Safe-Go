@@ -1,0 +1,90 @@
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { lazy, Suspense } from "react";
+import { VoiceAssistantProvider } from "./contexts/VoiceAssistantContext";
+import { ElderModeProvider } from "./contexts/ElderModeContext";
+import { FloatingAssistant } from "./components/FloatingAssistant";
+import { ThemeProvider } from "./components/ThemeProvider";
+
+// Eagerly loaded entry page for instant visual feedback on initial load
+import Home from "./pages/Home";
+import AuthPage from "./pages/AuthPage";
+import BookingPage from "./pages/BookingPage";
+import Safety from "./pages/Safety";
+import RideTracking from "./pages/RideTracking";
+import Dashboard from "./pages/Dashboard";
+import DriverPortal from "./pages/DriverPortal";
+import AdminDashboard from "./pages/AdminDashboard";
+import NotFound from "./pages/NotFound";
+import DriveWithUs from "./pages/DriveWithUs";
+import ApplyDriver from "./pages/ApplyDriver";
+import PWDMode from "./pages/PWDMode";
+import About from "./pages/About";
+
+import ProtectedRoute from "./components/ProtectedRoute";
+import { ScrollToTop } from "./components/ScrollToTop";
+
+const queryClient = new QueryClient();
+
+/**
+ * Premium Page Loader
+ * A subtle, high-fidelity loading state for secondary pages.
+ */
+const PageLoader = () => (
+  <div className="min-h-[80vh] flex flex-col items-center justify-center bg-background/50 backdrop-blur-sm animate-in fade-in duration-500">
+    <div className="relative h-16 w-16">
+      <div className="absolute inset-0 rounded-full border-4 border-primary/10" />
+      <div className="absolute inset-0 rounded-full border-4 border-t-primary animate-spin" />
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+      </div>
+    </div>
+    <p className="mt-6 text-[10px] font-black uppercase tracking-[0.3em] text-primary/60 animate-pulse">Syncing Matrix</p>
+  </div>
+);
+
+const App = () => (
+  <ThemeProvider defaultTheme="light" storageKey="safego-ui-theme">
+    <ElderModeProvider>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner position="top-right" expand={true} richColors closeButton />
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ScrollToTop />
+            <VoiceAssistantProvider>
+              {/* <FloatingAssistant /> */}
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/home" element={<Home />} />
+                  <Route path="/login" element={<AuthPage />} />
+                  <Route path="/signup" element={<AuthPage />} />
+                  <Route path="/book" element={<ProtectedRoute allowedRoles={["passenger", "admin"]} redirectTo="/driver"><BookingPage /></ProtectedRoute>} />
+                  <Route path="/book/:mode" element={<ProtectedRoute allowedRoles={["passenger", "admin"]} redirectTo="/driver"><BookingPage /></ProtectedRoute>} />
+                  <Route path="/booking" element={<ProtectedRoute allowedRoles={["passenger", "admin"]} redirectTo="/driver"><BookingPage /></ProtectedRoute>} />
+                  <Route path="/booking/:mode" element={<ProtectedRoute allowedRoles={["passenger", "admin"]} redirectTo="/driver"><BookingPage /></ProtectedRoute>} />
+                  <Route path="/ride/tracking" element={<ProtectedRoute><RideTracking /></ProtectedRoute>} />
+                  <Route path="/safety" element={<Safety />} />
+                  <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                  <Route path="/driver" element={<ProtectedRoute allowedRoles={["driver", "admin"]}><DriverPortal /></ProtectedRoute>} />
+                  <Route path="/admin" element={<ProtectedRoute allowedRoles={["admin"]}><AdminDashboard /></ProtectedRoute>} />
+                  <Route path="/drive-with-us" element={<DriveWithUs />} />
+                  <Route path="/apply-driver" element={<ApplyDriver />} />
+                  <Route path="/pwd-mode" element={<ProtectedRoute allowedRoles={["passenger", "admin"]} redirectTo="/driver"><PWDMode /></ProtectedRoute>} />
+                  <Route path="/about" element={<About />} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Suspense>
+            </VoiceAssistantProvider>
+          </BrowserRouter>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ElderModeProvider>
+  </ThemeProvider>
+);
+
+export default App;

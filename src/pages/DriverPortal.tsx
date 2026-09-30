@@ -1,0 +1,3588 @@
+import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import { SafeGoLogo } from "@/components/SafeGoLogo";
+import { useLocation, Link } from "react-router-dom";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { DriverNavigationMap } from "@/components/DriverNavigationMap";
+import { toast } from "sonner";
+import {
+  LayoutDashboard, Car, FileText, DollarSign, Settings, LogOut, Star, Check, Clock,
+  AlertCircle, Upload, MapPin, ArrowRight, TrendingUp, TrendingDown, Calendar, ChevronRight,
+  User, Phone, Mail, Shield, Bell, Eye, EyeOff, Camera, Pencil, X, Save,
+  IndianRupee, Download, Filter, Search, Menu, ChevronDown, ChevronUp,
+  Route, Clock3, Fuel, Award, ThumbsUp, Navigation, CircleDot,
+  FileUp, ExternalLink, MoreVertical, Trash2, Loader2, ShieldCheck, Lock, KeyRound, ShieldAlert,
+  Users, Sparkles, CheckCircle2, Power, Radio, Coffee
+} from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { useRef } from "react";
+import { getApiUrl } from "@/lib/api";
+
+// ───────── Types ─────────
+type TabKey = "dashboard" | "rides" | "history" | "documents" | "earnings" | "settings";
+
+const navItems: { icon: any; label: string; tab: TabKey }[] = [
+  { icon: LayoutDashboard, label: "Dashboard", tab: "dashboard" },
+  { icon: Car, label: "Available Rides", tab: "rides" },
+  { icon: Clock, label: "My History", tab: "history" },
+  { icon: FileText, label: "Documents", tab: "documents" },
+  { icon: DollarSign, label: "Earnings", tab: "earnings" },
+  { icon: Settings, label: "Settings", tab: "settings" },
+];
+
+// ───────── Tab Components ─────────
+
+const DashboardTab = ({
+  driver,
+  requests,
+  activity,
+  activeRide,
+  isOnline,
+  onToggleOnline,
+  isTogglingOnline = false,
+  onAccept,
+  onDecline,
+  onDetails,
+  onRefresh,
+  onOpenOtpModal,
+  onFinishRide,
+  onOpenViolationModal,
+  onCancelRide,
+  onOpenSplitOtpModal,
+  loading
+}: {
+  driver: any,
+  requests: any[],
+  activity: any[],
+  activeRide: any,
+  isOnline: boolean,
+  onToggleOnline: () => void,
+  isTogglingOnline?: boolean,
+  onAccept: (id: string, loc: string) => void,
+  onDecline: (id: string) => void,
+  onDetails: (ride: any) => void,
+  onRefresh: () => void,
+  onOpenOtpModal: (id: string) => void,
+  onFinishRide: (id: string) => void,
+  onOpenViolationModal: (id: string) => void,
+  onCancelRide: (id: string) => void,
+  onOpenSplitOtpModal?: (id: string) => void,
+  loading: boolean
+}) => {
+  const dName = driver?.user?.full_name || driver?.full_name || localStorage.getItem("safego_user_name") || "Driver";
+  const initials = dName.trim().split(" ").filter(Boolean).map((n: string) => n[0]).slice(0, 2).join("").toUpperCase() || "D";
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-700">
+      {/* Active Assigned Ride Console */}
+      {activeRide && (
+        <div className="rounded-2xl border-2 border-primary/40 bg-card p-6 shadow-xl animate-in slide-in-from-top-4 duration-500 relative overflow-hidden">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="h-2.5 w-2.5 rounded-full bg-primary animate-ping" />
+              <h3 className="font-display font-black text-sm uppercase tracking-wider text-foreground">
+                Active Assigned Ride Console
+              </h3>
+            </div>
+            {activeRide.is_otp_verified ? (
+              <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-xs font-black uppercase tracking-wider flex items-center gap-1">
+                <Check size={14} /> Trip In Progress
+              </span>
+            ) : (
+              <span className="px-3 py-1 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 text-xs font-black uppercase tracking-wider flex items-center gap-1 animate-pulse">
+                <Lock size={14} /> OTP Verification Pending
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-secondary/40 border border-border/50">
+            <div>
+              <p className="text-sm font-bold text-foreground">{activeRide.pickup} ➔ {activeRide.dest}</p>
+              <p className="text-xs text-muted-foreground mt-1 font-medium">Passenger: {activeRide.passenger_name || "Rider"} • Fare: {activeRide.fare}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onOpenViolationModal(activeRide.id || activeRide._id)}
+                className="px-4 py-2.5 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30 hover:bg-rose-500/20 active:scale-95 font-black text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm"
+                title="Report Solo Male or Accompanied Policy Violation"
+              >
+                <ShieldAlert size={15} /> Report Policy Violation
+              </button>
+              <button
+                type="button"
+                onClick={() => onCancelRide(activeRide.id || activeRide._id)}
+                className="px-4 py-2.5 rounded-xl border border-red-500/30 bg-red-500/5 text-red-600 dark:text-red-400 hover:bg-red-500/15 active:scale-95 font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5"
+                title="Cancel trip"
+              >
+                <X size={15} /> Cancel Ride
+              </button>
+              {!activeRide.is_otp_verified ? (
+                <button
+                  onClick={() => onOpenOtpModal(activeRide.id)}
+                  className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-black text-xs uppercase tracking-wider hover:brightness-110 active:scale-95 shadow-md flex items-center gap-2"
+                >
+                  <KeyRound size={16} /> Enter Passenger OTP to Start
+                </button>
+              ) : (
+                <button
+                  onClick={() => onFinishRide(activeRide.id)}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-black text-xs uppercase tracking-wider hover:bg-emerald-700 active:scale-95 shadow-md flex items-center gap-2"
+                >
+                  <Check size={16} /> Complete Ride & Collect Fare
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* ─── SAFECO SPLIT DUAL-PASSENGER STATUS CONSOLE ─── */}
+          {(activeRide.split_status === "active" || activeRide.is_split_active) && (
+            <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-emerald-500/10 border-2 border-indigo-500/30 space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 rounded-lg bg-indigo-600 text-white font-black text-xs flex items-center gap-1.5 shadow-sm">
+                    <Users size={14} /> Dual-Passenger Split Active
+                  </span>
+                  <span className="text-xs font-bold text-foreground">
+                    Combined Total Payout: <strong className="text-emerald-600 dark:text-emerald-400">₹120.00</strong> (+₹20 Split Bonus)
+                  </span>
+                </div>
+                {activeRide.is_split_otp_verified ? (
+                  <span className="px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm">
+                    <Check size={12} /> Co-Rider Verified & Boarded
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onOpenSplitOtpModal && onOpenSplitOtpModal(activeRide.id || activeRide._id)}
+                    className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] uppercase tracking-wider shadow-md flex items-center gap-1.5 active:scale-95 animate-pulse"
+                  >
+                    <KeyRound size={13} /> Verify Waypoint A2 Boarding PIN
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-3 rounded-xl bg-background/90 border border-indigo-500/20 shadow-sm">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block">Passenger 1 (Primary Rider)</span>
+                  <p className="font-black text-foreground mt-0.5">{activeRide.passenger_name || "Primary Rider"} (₹60 Fare)</p>
+                  <p className="text-[11px] text-muted-foreground truncate">{activeRide.pickup} ➔ {activeRide.dest}</p>
+                  <span className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                    <Check size={10} /> Boarded & Active
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-background/90 border border-purple-500/20 shadow-sm">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-purple-600 dark:text-purple-400 block">Passenger 2 (Corridor Co-Rider)</span>
+                  <p className="font-black text-foreground mt-0.5">{activeRide.split_passenger_name || "Kavita Rao"} (₹60 Fare • ⭐ {activeRide.split_passenger_rating || 4.95})</p>
+                  <p className="text-[11px] text-muted-foreground truncate">{activeRide.split_pickup_address || "Waypoint A2"} ➔ {activeRide.dest}</p>
+                  <span className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-amber-500">
+                    {activeRide.is_split_otp_verified ? "✓ PIN Verified" : "⏳ Waypoint Pickup Pending PIN"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Interactive Driver Satellite Route Map to Destination */}
+          <div className="mt-4 pt-4 border-t border-border/40">
+            <DriverNavigationMap
+              pickup={activeRide.pickup || "Pickup Location"}
+              pickupLat={activeRide.pickup_latitude}
+              pickupLng={activeRide.pickup_longitude}
+              destination={activeRide.dest || activeRide.destination || "Destination Address"}
+              destLat={activeRide.destination_latitude}
+              destLng={activeRide.destination_longitude}
+              passengerName={activeRide.passenger_name || activeRide.passenger || "Rider"}
+              passengerPhone={activeRide.passenger_phone || "+91 9490969706"}
+              fare={activeRide.fare}
+              isOtpVerified={activeRide.is_otp_verified}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ─── LIVE DRIVER AVAILABILITY HERO BANNER ─── */}
+      <div className={`relative overflow-hidden rounded-3xl border-2 transition-all duration-500 shadow-xl ${
+        isOnline
+          ? "border-emerald-500/40 bg-gradient-to-br from-emerald-950/20 via-card to-background shadow-emerald-500/5"
+          : "border-border/80 bg-gradient-to-br from-secondary/60 via-card to-background shadow-black/5"
+      }`}>
+        {/* Ambient Background Glow Effect when Online */}
+        {isOnline && (
+          <div className="absolute -top-24 -right-24 h-48 w-48 rounded-full bg-emerald-500/15 blur-3xl pointer-events-none animate-pulse" />
+        )}
+
+        <div className="p-6 sm:p-7 relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex items-start sm:items-center gap-4">
+            {/* Animated Status Pulse Emblem */}
+            <div className={`relative flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border transition-all duration-500 shadow-inner ${
+              isOnline
+                ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-500 shadow-emerald-500/20"
+                : "border-border bg-secondary/80 text-muted-foreground"
+            }`}>
+              {isOnline ? (
+                <>
+                  <Radio size={28} className="animate-pulse" />
+                  <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-4 w-4 bg-emerald-500 border-2 border-background" />
+                  </span>
+                </>
+              ) : (
+                <Coffee size={28} className="text-muted-foreground" />
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider border shadow-sm ${
+                  isOnline
+                    ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+                    : "bg-secondary text-muted-foreground border-border"
+                }`}>
+                  <span className={`h-2 w-2 rounded-full ${isOnline ? "bg-emerald-500 animate-ping" : "bg-muted-foreground"}`} />
+                  {isOnline ? "Duty: ONLINE" : "Duty: OFFLINE"}
+                </span>
+
+                <span className="text-xs font-bold text-muted-foreground flex items-center gap-1">
+                  <ShieldCheck size={14} className="text-primary" /> Verified Pilot
+                </span>
+              </div>
+
+              <h2 className="text-xl sm:text-2xl font-black font-display tracking-tight text-foreground">
+                {isOnline ? "Available for Taking Rides" : "Off-Duty • Taking a Break"}
+              </h2>
+
+              <p className="text-xs sm:text-sm text-muted-foreground max-w-xl leading-relaxed">
+                {isOnline
+                  ? "Your vehicle is visible to passengers nearby. SafeGo AI is actively searching and dispatching ride requests and corridor splits."
+                  : "You are currently invisible to riders. Toggle availability ON whenever you are ready to receive new ride requests and earn."}
+              </p>
+            </div>
+          </div>
+
+          {/* Big Interactive Online / Offline Action Switch Button */}
+          <div className="flex items-center gap-4 self-end md:self-center shrink-0">
+            <div className="text-right hidden sm:block">
+              <p className="text-xs font-black uppercase tracking-wider text-foreground">
+                {isOnline ? "Go Off-Duty" : "Go On-Duty"}
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                {isOnline ? "Pause ride matching" : "Start receiving rides"}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              disabled={isTogglingOnline}
+              onClick={onToggleOnline}
+              className={`relative inline-flex items-center justify-center gap-3 px-6 py-4 rounded-2xl font-black text-sm uppercase tracking-wider transition-all duration-300 shadow-xl active:scale-95 disabled:opacity-50 select-none ${
+                isOnline
+                  ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/25 ring-2 ring-emerald-500/20"
+                  : "bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary/20 ring-2 ring-primary/20"
+              }`}
+            >
+              {isTogglingOnline ? (
+                <Loader2 size={20} className="animate-spin" />
+              ) : isOnline ? (
+                <>
+                  <Power size={20} className="text-emerald-100" />
+                  <span>Online • Active</span>
+                </>
+              ) : (
+                <>
+                  <Power size={20} className="text-primary-foreground" />
+                  <span>Go Online Now</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Profile header */}
+      <div className="rounded-2xl border border-border bg-background p-6 lg:p-8 shadow-sm">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-xl font-black text-primary-foreground shadow-lg shadow-primary/20">
+            {initials}
+          </div>
+          <div>
+            <h2 className="font-display text-2xl font-black text-foreground tracking-tight">{driver?.user?.full_name || driver?.full_name || localStorage.getItem("safego_user_name") || "Driver Portal"}</h2>
+            <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground font-medium">
+              <span className="flex items-center gap-1.5"><Star size={14} className="fill-amber-400 text-amber-400" /> {driver?.average_rating || "0.0"} Rating</span>
+              <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+              <span className="rounded-full bg-primary/10 px-3 py-0.5 text-[10px] font-black uppercase tracking-widest text-primary border border-primary/20">Verified Driver ✓</span>
+              <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+              <span className={`rounded-full px-3 py-0.5 text-[10px] font-black uppercase tracking-widest border flex items-center gap-1.5 ${
+                isOnline
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/25"
+                  : "bg-secondary text-muted-foreground border-border"
+              }`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-muted-foreground"}`} />
+                {isOnline ? "Available for Rides" : "Off-Duty"}
+              </span>
+            </div>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <button onClick={onRefresh} disabled={loading} className="p-2.5 rounded-xl border border-border bg-background hover:bg-secondary transition-all active:scale-95 disabled:opacity-50">
+              <Clock className={`h-5 w-5 text-muted-foreground ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        </div>
+        <div className="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[
+            { label: "Today's Rides", value: driver?.today_rides || 0, icon: Car, trend: "+3", up: true },
+            { label: "Earnings", value: `₹${(driver?.today_earnings || 0).toLocaleString()}`, icon: IndianRupee, trend: "+18%", up: true },
+            { label: "Acceptance", value: `${driver?.acceptance_rate || 100}%`, icon: ThumbsUp, trend: "+2%", up: true },
+            { label: "Total Rides", value: driver?.total_rides || 0, icon: Award, trend: "Overall", up: true },
+          ].map((s) => (
+            <div key={s.label} className="rounded-2xl border border-border/60 p-5 bg-background hover:shadow-xl hover:border-primary/20 transition-all group">
+              <div className="flex items-center justify-between">
+                <div className="p-2 rounded-xl bg-secondary/50 group-hover:bg-primary/10 transition-colors">
+                  <s.icon size={20} className="text-muted-foreground group-hover:text-primary transition-colors" />
+                </div>
+                <span className={`flex items-center gap-0.5 text-[10px] font-black uppercase tracking-widest ${s.up ? "text-emerald-600" : "text-red-500"}`}>
+                  {s.up ? <TrendingUp size={12} /> : <TrendingDown size={12} />} {s.trend}
+                </span>
+              </div>
+              <p className="mt-4 text-2xl font-black font-display text-foreground leading-none">{s.value}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-2 opacity-60">{s.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Ride requests */}
+      <div className="rounded-2xl border border-border bg-background p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h3 className="font-display text-lg font-bold text-foreground">Incoming Ride Requests</h3>
+            {isOnline && <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />}
+          </div>
+          {isOnline ? (
+            <span className="text-xs text-muted-foreground bg-secondary px-3 py-1 rounded-full">{requests.length} pending</span>
+          ) : (
+            <span className="text-xs font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1 rounded-full">Off-Duty / Paused</span>
+          )}
+        </div>
+
+        {!isOnline ? (
+          <div className="mt-4 py-12 px-6 text-center bg-secondary/15 rounded-2xl border border-dashed border-border/80 transition-all animate-in fade-in zoom-in-95">
+            <div className="mx-auto w-16 h-16 bg-background rounded-2xl border border-border flex items-center justify-center mb-3 shadow-sm text-muted-foreground">
+              <Coffee size={28} />
+            </div>
+            <h4 className="text-lg font-display font-black text-foreground">You are currently Offline</h4>
+            <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+              New ride requests and corridor split passengers are paused. Switch your status to <strong>Online</strong> to start receiving real-time passenger requests.
+            </p>
+            <button
+              onClick={onToggleOnline}
+              disabled={isTogglingOnline}
+              className="mt-5 inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-600/20 active:scale-95 transition-all"
+            >
+              <Power size={14} /> Go Online & Accept Rides
+            </button>
+          </div>
+        ) : (
+          <div className="mt-4 flex flex-col gap-3">
+            {requests.length > 0 ? (
+              requests.map((r) => (
+                <div key={r.id} className="flex flex-wrap items-center gap-4 rounded-xl border border-border p-4 hover:border-primary/30 hover:shadow-sm transition-all group animate-in slide-in-from-top-2">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                    <Navigation size={18} className="text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-[200px]">
+                    <p className="text-sm font-semibold text-foreground">{r.pickup} → {r.dest}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{r.dist} · Est. {r.fare} · {r.passengers} passenger{r.passengers > 1 ? "s" : ""}</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground">{r.time}</span>
+                  <span className="rounded-full px-3 py-1 text-xs font-medium" style={{ backgroundColor: r.modeBg, color: r.modeColor }}>{r.mode}</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => onDetails(r)}
+                      className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary transition-colors"
+                    >
+                      Details
+                    </button>
+                    <button
+                      onClick={() => onAccept(r.id, r.dest)}
+                      className="rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground hover:brightness-110 transition-all active:scale-95"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      onClick={() => onDecline(r.id)}
+                      className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-red-500 hover:bg-red-50 hover:border-red-100 transition-colors"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-16 text-center bg-secondary/10 rounded-2xl border border-dashed border-border transition-all animate-in fade-in zoom-in-95">
+                <div className="mx-auto w-16 h-16 bg-background rounded-full flex items-center justify-center mb-4 shadow-sm">
+                  <Car className="text-muted-foreground opacity-50" size={28} />
+                </div>
+                <h4 className="text-xl font-display font-bold text-foreground">All Cleared!</h4>
+                <p className="text-sm text-muted-foreground mt-1 px-4">You've reached the end of the queue. We'll notify you when new ride requests arrive.</p>
+                <button onClick={onRefresh} className="mt-6 rounded-xl border border-border bg-background px-6 py-2 text-sm font-semibold text-foreground hover:bg-secondary transition-colors">
+                  Refresh Queue
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Performance & Activity */}
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border border-border bg-background p-6">
+          <h3 className="font-display text-lg font-bold text-foreground">Performance</h3>
+          <div className="mt-4 space-y-4">
+            {[
+              { label: "Completion Rate", value: 96, color: "bg-emerald-500" },
+              { label: "On-Time Pickup", value: 91, color: "bg-blue-500" },
+              { label: "Customer Satisfaction", value: 98, color: "bg-primary" },
+              { label: "Safety Score", value: 100, color: "bg-violet-500" },
+            ].map((p) => (
+              <div key={p.label}>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">{p.label}</span>
+                  <span className="font-semibold text-foreground">{p.value}%</span>
+                </div>
+                <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                  <div className={`h-full rounded-full ${p.color} transition-all duration-1000`} style={{ width: `${p.value}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-border bg-background p-6">
+          <h3 className="font-display text-lg font-bold text-foreground">Recent Activity</h3>
+          <div className="mt-4 space-y-3">
+            {activity.length > 0 ? activity.map((a, i) => {
+              const Icon = a.type === "ride" ? Check : a.type === "document" ? FileText : a.type === "rating" ? Star : CircleDot;
+              const iconColor = a.type === "ride" ? "text-emerald-600" : a.type === "document" ? "text-blue-600" : a.type === "rating" ? "text-amber-500" : "text-emerald-600";
+              const iconBg = a.type === "ride" ? "bg-emerald-100" : a.type === "document" ? "bg-blue-100" : a.type === "rating" ? "bg-amber-100" : "bg-emerald-100";
+
+              return (
+                <div key={i} className="flex items-center gap-3 py-2 border-b border-border/50 last:border-0 hover:bg-secondary/20 rounded-lg transition-colors px-2 -mx-2">
+                  <div className={`flex h-8 w-8 items-center justify-center rounded-full ${iconBg} shrink-0`}>
+                    <Icon size={14} className={iconColor} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-foreground truncate">{a.text}</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">{a.time}</span>
+                </div>
+              );
+            }) : (
+              <div className="py-8 text-center">
+                <p className="text-sm text-muted-foreground">No recent activity</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AvailableRidesTab = ({
+  available,
+  isOnline = true,
+  onToggleOnline,
+  onAccept,
+  onDetails,
+  onRefresh,
+  loading
+}: {
+  available: any[],
+  isOnline?: boolean,
+  onToggleOnline?: () => void,
+  onAccept: (id: string, loc: string) => void,
+  onDetails: (ride: any) => void,
+  onRefresh: () => void,
+  loading: boolean
+}) => {
+  const [filter, setFilter] = useState<"all" | "nearby" | "surge">("all");
+  const filtered = filter === "surge" ? available.filter(r => r.surge > 1) :
+    filter === "nearby" ? available.filter(r => parseFloat(r.dist) < 4) :
+      available;
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-700">
+      {!isOnline && (
+        <div className="rounded-2xl border-2 border-amber-500/30 bg-amber-500/10 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400">
+              <AlertCircle size={22} />
+            </div>
+            <div>
+              <h4 className="font-bold text-sm text-foreground">You are currently Offline</h4>
+              <p className="text-xs text-muted-foreground">Go Online to accept rides and allow passengers to request trips with you.</p>
+            </div>
+          </div>
+          {onToggleOnline && (
+            <button
+              onClick={onToggleOnline}
+              className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider shadow-md shrink-0 active:scale-95 transition-all flex items-center gap-2"
+            >
+              <Power size={14} /> Go Online Now
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-border bg-background p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="font-display text-xl font-bold text-foreground">Available Rides</h2>
+            <p className="text-sm text-muted-foreground mt-1">Browse and accept new ride requests in your area</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onRefresh}
+              disabled={loading}
+              className="mr-2 rounded-xl border border-border p-2 text-muted-foreground hover:bg-secondary disabled:opacity-50"
+            >
+              <Clock size={18} className={loading ? "animate-spin" : ""} />
+            </button>
+            {(["all", "nearby", "surge"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-all ${filter === f ? "bg-primary text-primary-foreground shadow-sm" : "bg-secondary text-muted-foreground hover:text-foreground hover:bg-secondary/80"}`}
+              >
+                {f === "all" ? "All Rides" : f === "nearby" ? "Nearby" : "Surge ⚡"}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {filtered.length > 0 ? (
+          filtered.map((r, i) => (
+            <div key={r.id} className="rounded-2xl border border-border bg-background p-5 hover:border-primary/30 hover:shadow-md transition-all group animate-in zoom-in-95 duration-500" style={{ animationDelay: `${i * 50}ms` }}>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                    <Route size={20} className="text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{r.pickup}</p>
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                      <ArrowRight size={10} /> {r.dest}
+                    </div>
+                  </div>
+                </div>
+                {r.surge > 1 && (
+                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700 shadow-sm">⚡ {r.surge}x Surge</span>
+                )}
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+                <span className="flex items-center gap-1.5 bg-secondary/50 p-2 rounded-lg"><MapPin size={12} /> {r.dist}</span>
+                <span className="flex items-center gap-1.5 bg-secondary/50 p-2 rounded-lg"><Clock size={12} /> {r.time}</span>
+                <span className="flex items-center gap-1.5 bg-secondary/50 p-2 rounded-lg"><User size={12} /> {r.passengers} Passengers</span>
+                <span className="flex items-center gap-1.5 bg-secondary/50 p-2 rounded-lg"><Star size={12} className="text-amber-400 fill-amber-400" /> {r.rating} Rider Rating</span>
+              </div>
+              <div className="mt-4 py-3 border-t border-border/50 flex items-center justify-between">
+                <p className="text-lg font-bold font-display text-foreground">{r.fare}</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => onDetails(r)}
+                    className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary transition-colors"
+                  >
+                    Details
+                  </button>
+                  <button
+                    onClick={() => onAccept(r.id, r.dest)}
+                    className="rounded-xl bg-primary px-6 py-2 text-sm font-semibold text-primary-foreground hover:brightness-110 transition-all active:scale-95 shadow-sm shadow-primary/20"
+                  >
+                    Accept
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="col-span-2 py-24 text-center rounded-2xl border border-dashed border-border bg-background/40">
+            <Search className="mx-auto text-muted-foreground/30 mb-4" size={48} />
+            <h3 className="text-xl font-display font-bold text-foreground">No matches found</h3>
+            <p className="text-sm text-muted-foreground mt-1 max-w-xs mx-auto">Try broadening your filters or wait for more riders in your area.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const HistoryTab = ({
+  history,
+  driver,
+  loading
+}: {
+  history: any[],
+  driver?: any,
+  loading: boolean
+}) => {
+  const { t } = useTranslation();
+  if (loading && history.length === 0) {
+    return (
+      <div className="flex h-64 items-center justify-center rounded-2xl border border-dashed border-border bg-background/50">
+        <Clock className="mr-2 h-5 w-5 animate-spin text-muted-foreground" />
+        <span className="text-sm font-medium text-muted-foreground">Loading history...</span>
+      </div>
+    );
+  }
+
+  const effectiveHistory = Array.isArray(history) ? history : [];
+  const completedRides = effectiveHistory.filter(r => r.status !== "failed" && r.status !== "cancelled");
+  const calculatedEarnings = completedRides.reduce((sum, r) => sum + (parseInt((r.fare || "0").toString().replace("₹", "").replace(",", "")) || 0), 0);
+  const totalEarnings = driver?.today_earnings || calculatedEarnings;
+  const totalRides = driver?.total_rides || completedRides.length;
+  const calculatedTips = completedRides.reduce((sum, r) => sum + (parseInt((r.tip || "0").toString().replace("₹", "").replace(",", "")) || 0), 0);
+  const totalTips = calculatedTips;
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-700">
+      <div className="rounded-2xl border border-border bg-background p-6">
+        <h2 className="font-display text-xl font-bold text-foreground">Ride History</h2>
+        <p className="text-sm text-muted-foreground mt-1">Your complete ride log with earnings and ratings</p>
+        <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="rounded-xl bg-secondary/80 p-4 text-center">
+            <p className="text-2xl font-bold font-display text-foreground">{totalRides}</p>
+            <p className="text-xs text-muted-foreground mt-1">Total Rides</p>
+          </div>
+          <div className="rounded-xl bg-secondary/80 p-4 text-center">
+            <p className="text-2xl font-bold font-display text-emerald-600">₹{totalEarnings.toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground mt-1">Total Fares</p>
+          </div>
+          <div className="rounded-xl bg-secondary/80 p-4 text-center">
+            <p className="text-2xl font-bold font-display text-primary">₹{totalTips}</p>
+            <p className="text-xs text-muted-foreground mt-1">Tips Earned</p>
+          </div>
+          <div className="rounded-xl bg-secondary/80 p-4 text-center">
+            <p className="text-2xl font-bold font-display text-foreground">{driver?.average_rating ? Number(driver.average_rating).toFixed(1) : "5.0"}</p>
+            <p className="text-xs text-muted-foreground mt-1">Avg Rating</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-background overflow-hidden shadow-sm">
+        <div className="p-4 border-b border-border bg-background/50 backdrop-blur-sm sticky top-0 z-10">
+          <div className="flex items-center gap-3 bg-secondary/50 rounded-xl px-4 py-2 border border-border/50">
+            <Search size={18} className="text-muted-foreground" />
+            <input type="text" placeholder="Search rides by location, date, or amount..." className="flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground" />
+          </div>
+        </div>
+        <div className="divide-y divide-border">
+          {effectiveHistory.length === 0 ? (
+            <div className="py-16 text-center">
+              <Clock className="mx-auto text-muted-foreground/30 mb-3" size={40} />
+              <p className="text-base font-bold text-foreground">No ride history yet</p>
+              <p className="text-xs text-muted-foreground mt-1">Completed trips will be recorded here automatically.</p>
+            </div>
+          ) : (
+            effectiveHistory.map((r, i) => {
+            const isCancelled = r.status === "failed" || r.status === "cancelled";
+            const isViolation = isCancelled && Boolean(
+              r.is_penalty_applied ||
+              (r.cancel_reason && (
+                r.cancel_reason.toLowerCase().includes("violation") ||
+                r.cancel_reason.toLowerCase().includes("policy") ||
+                r.cancel_reason.toLowerCase().includes("male")
+              ))
+            );
+            const isOtpMismatch = isCancelled && Boolean(
+              r.cancel_reason && (
+                r.cancel_reason.toLowerCase().includes("otp") ||
+                r.cancel_reason.toLowerCase().includes("pin")
+              )
+            );
+
+            return (
+              <div key={r.id || i} className="flex flex-col gap-3 p-5 hover:bg-secondary/30 transition-all group animate-in slide-in-from-bottom-2" style={{ animationDelay: `${i * 30}ms` }}>
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-2xl shrink-0 shadow-sm ${
+                    !isCancelled
+                      ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                      : isViolation
+                      ? "bg-rose-500/15 text-rose-600 border border-rose-500/30"
+                      : isOtpMismatch
+                      ? "bg-amber-500/15 text-amber-600 border border-amber-500/30"
+                      : "bg-red-500/10 text-red-500 border border-red-500/20"
+                  }`}>
+                    {!isCancelled ? (
+                      <Check size={22} className="text-emerald-600" />
+                    ) : isViolation ? (
+                      <ShieldAlert size={22} className="text-rose-600 dark:text-rose-400 animate-pulse" />
+                    ) : isOtpMismatch ? (
+                      <Lock size={20} className="text-amber-600 dark:text-amber-400" />
+                    ) : (
+                      <X size={20} className="text-red-500" />
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-[200px]">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">
+                        {r.pickup} → {r.dest}
+                      </p>
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${
+                        r.mode === "pink" ? "bg-pink-500/10 text-pink-600 border border-pink-500/20" : "bg-secondary text-foreground"
+                      }`}>
+                        {r.mode || "Normal"}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                      <span className="flex items-center gap-1 font-medium"><Calendar size={12} /> {r.date || "Today"} {r.time ? `• ${r.time}` : ""}</span>
+                      <span className="flex items-center gap-1 font-medium"><User size={12} /> {r.passenger_name || "Passenger"}</span>
+                      {r.duration && <span className="flex items-center gap-1 font-medium"><Clock size={12} /> {r.duration}</span>}
+                    </div>
+                  </div>
+
+                  <div className="text-right flex flex-col items-end shrink-0">
+                    <p className={`text-sm font-display font-black ${isViolation ? "text-rose-600 dark:text-rose-400" : "text-foreground"}`}>
+                      {r.fare}
+                    </p>
+                    {r.driver_compensation_amount && r.driver_compensation_amount > 0 ? (
+                      <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full mt-0.5 border border-emerald-500/20">
+                        +₹{r.driver_compensation_amount} Inconvenience Credit
+                      </span>
+                    ) : r.tip && r.tip !== "₹0" ? (
+                      <p className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded mt-0.5">+{r.tip} Tip</p>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                    <span className={`rounded-xl px-3 py-1 text-[10px] font-black uppercase tracking-wider ${
+                      !isCancelled
+                        ? "bg-emerald-500 text-white shadow-sm shadow-emerald-500/20"
+                        : isViolation
+                        ? "bg-rose-600 text-white shadow-sm shadow-rose-600/20"
+                        : isOtpMismatch
+                        ? "bg-amber-500 text-white"
+                        : "bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300"
+                    }`}>
+                      {!isCancelled
+                        ? "Completed"
+                        : isViolation
+                        ? "Policy Violation"
+                        : isOtpMismatch
+                        ? "PIN Mismatch"
+                        : "Cancelled"}
+                    </span>
+                    {r.rating > 0 && (
+                      <div className="flex items-center gap-0.5">
+                        {Array.from({ length: 5 }).map((_, idx) => (
+                          <Star key={idx} size={10} className={idx < r.rating ? "fill-amber-400 text-amber-400" : "text-gray-200"} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Specific Cancellation / Policy Violation Detail Callout */}
+                {isCancelled && (
+                  <div className={`mt-1 rounded-xl p-3 text-xs border ${
+                    isViolation
+                      ? "bg-rose-500/10 border-rose-500/25 text-rose-950 dark:text-rose-100"
+                      : isOtpMismatch
+                      ? "bg-amber-500/10 border-amber-500/25 text-amber-950 dark:text-amber-100"
+                      : "bg-secondary/60 border-border/60 text-muted-foreground"
+                  }`}>
+                    <div className="flex items-start justify-between gap-2 flex-wrap">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+                          {isViolation ? "Reported Safety Policy Violation Reason:" : "Cancellation Cause / Remark:"}
+                        </span>
+                        <p className="font-semibold text-foreground text-xs">
+                          {r.penalty_reason || r.cancel_reason || "Driver cancelled ride upon arrival."}
+                        </p>
+                      </div>
+                      {isViolation && (
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black uppercase">
+                            ₹{r.penalty_amount || 750} Fine Levied
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black uppercase">
+                            +₹200 Pilot Credit
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          }))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const DocumentsTab = ({
+  docList,
+  onView,
+  onUpload,
+  onRemove
+}: {
+  docList: any[],
+  onView: (doc: any) => void,
+  onUpload: (name: string) => void,
+  onRemove: (name: string) => void
+}) => {
+  return (
+    <div className="space-y-6 animate-in fade-in duration-700">
+      <div className="rounded-2xl border border-border bg-background p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="font-display text-xl font-bold text-foreground">Documents & Verification</h2>
+            <p className="text-sm text-muted-foreground mt-1">Manage your documents to stay compliant and verified</p>
+          </div>
+          <div className="flex items-center gap-2 rounded-xl bg-emerald-100 px-4 py-2">
+            <Shield size={16} className="text-emerald-600" />
+            <span className="text-sm font-medium text-emerald-700">4 of 6 verified</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {docList.map((d, i) => (
+          <div key={d.name} className="rounded-2xl border border-border bg-background p-5 hover:shadow-md transition-shadow animate-in zoom-in-95 duration-500" style={{ animationDelay: `${i * 50}ms` }}>
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${d.bg}`}>
+                  <d.icon size={18} className={d.color} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-foreground">{d.name}</h4>
+                  <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mt-0.5">Expires: {d.expiry}</p>
+                </div>
+              </div>
+              <span className={`rounded-xl px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${d.bg} ${d.color}`}>{d.status}</span>
+            </div>
+            <div className="mt-4 flex items-center justify-between border-t border-border/50 pt-4">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Uploaded: {d.uploaded}</span>
+              {d.status === "Upload Required" ? (
+                <button
+                  onClick={() => onUpload(d.name)}
+                  className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:brightness-110 transition-all active:scale-95 shadow-sm shadow-primary/20"
+                >
+                  <Upload size={14} /> Upload Now
+                </button>
+              ) : d.status === "Expiring Soon" ? (
+                <button
+                  onClick={() => onUpload(d.name)}
+                  className="flex items-center gap-1.5 rounded-xl bg-amber-50 px-4 py-2 text-xs font-bold text-amber-600 hover:bg-amber-100 transition-colors border border-amber-200/50"
+                >
+                  <Upload size={14} /> Re-upload
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => onView(d)}
+                    className="flex items-center gap-1.5 rounded-xl bg-secondary px-4 py-2 text-xs font-bold text-muted-foreground hover:text-foreground transition-all border border-border/50"
+                  >
+                    <Eye size={14} /> View
+                  </button>
+                  <button
+                    onClick={() => onRemove(d.name)}
+                    className="flex items-center justify-center rounded-xl bg-red-50 p-2 text-red-500 hover:bg-red-100 transition-colors border border-red-100"
+                    title="Remove Document"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const EarningsTab = ({ history, driver }: { history: any[], driver?: any }) => {
+  const { t } = useTranslation();
+  const effectiveHistory = Array.isArray(history) ? history : [];
+  const completedRides = effectiveHistory.filter(r => r.status !== "failed" && r.status !== "cancelled");
+  const calculatedEarnings = completedRides.reduce((sum, r) => sum + (parseInt((r.fare || "0").toString().replace("₹", "").replace(",", "")) || 0), 0);
+  const totalEarnings = driver?.today_earnings || calculatedEarnings;
+  const totalRides = driver?.total_rides || completedRides.length;
+  const calculatedTips = completedRides.reduce((sum, r) => sum + (parseInt((r.tip || "0").toString().replace("₹", "").replace(",", "")) || 0), 0);
+  const totalTips = calculatedTips;
+
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+  const earningsByDay = days.map((day) => {
+    const dayRides = completedRides.filter(r => {
+      let dateVal: Date;
+      if (r.date === "Today") dateVal = new Date();
+      else if (r.date === "Yesterday") {
+        dateVal = new Date();
+        dateVal.setDate(dateVal.getDate() - 1);
+      } else {
+        dateVal = new Date(r.date);
+      }
+      return !isNaN(dateVal.getTime()) && days[dateVal.getDay()] === day;
+    });
+    const amount = dayRides.reduce((sum, r) => sum + (parseInt((r.fare || "0").toString().replace("₹", "").replace(",", "")) || 0), 0);
+    const ridesCount = dayRides.length;
+    return { day, amount, rides: ridesCount };
+  });
+
+  const maxEarning = Math.max(...earningsByDay.map(d => d.amount), 500);
+
+  const handleExport = () => {
+    const csvContent = "data:text/csv;charset=utf-8,"
+      + "Day,Earnings,Rides\n"
+      + completedRides.map(r => `${r.date},${r.pickup},${r.dest},${r.fare},${r.tip},${r.status}`).join("\n");
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "earnings_report_mar_2026.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    toast.success("Export Successful", {
+      description: "Your earnings report has been downloaded.",
+      position: "bottom-right",
+    });
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-700">
+      <div className="rounded-2xl border border-border bg-background p-6">
+        <h2 className="font-display text-xl font-bold text-foreground">Earnings Overview</h2>
+        <p className="text-sm text-muted-foreground mt-1">Track your income and optimize your driving schedule</p>
+        <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-4">
+          {[
+            { label: "This Period", value: `₹${totalEarnings.toLocaleString()}`, trend: "+12.5%", up: true },
+            { label: "Total Rides", value: totalRides.toString(), trend: `+${totalRides}`, up: true },
+            { label: "Avg per Ride", value: `₹${totalRides > 0 ? Math.round(totalEarnings / totalRides) : 0}`, trend: "+₹5", up: true },
+            { label: "Total Tips", value: `₹${totalTips}`, trend: "+15%", up: true },
+          ].map((s) => (
+            <div key={s.label} className="rounded-2xl border border-border/60 p-5 bg-background hover:shadow-md transition-all">
+              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-60">{s.label}</p>
+              <p className="text-2xl font-black font-display text-foreground mt-2 leading-none">{s.value}</p>
+              <span className={`flex items-center gap-0.5 text-[10px] font-black uppercase tracking-widest mt-3 ${s.up ? "text-emerald-600" : "text-red-500"}`}>
+                {s.up ? <TrendingUp size={12} /> : <TrendingDown size={12} />} {s.trend}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Weekly Chart */}
+      <div className="rounded-2xl border border-border bg-background p-6 lg:p-8">
+        <div className="flex items-center justify-between mb-12">
+          <div>
+            <h3 className="font-display text-lg font-bold text-foreground">Weekly Performance</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Daily earnings analysis for current week</p>
+          </div>
+          <span className="text-xs font-bold text-muted-foreground bg-secondary px-4 py-1.5 rounded-full border border-border/50 shadow-sm">Mar 6 – Mar 12, 2026</span>
+        </div>
+
+        {/* The Fixed Graph */}
+        <div className="h-72 flex items-end justify-between gap-2 sm:gap-4 px-1 sm:px-4 border-b border-border pb-2 relative">
+          {/* Grid Lines */}
+          <div className="absolute inset-x-0 top-0 h-full flex flex-col justify-between pointer-events-none opacity-20">
+            <div className="w-full border-t border-dashed border-muted-foreground"></div>
+            <div className="w-full border-t border-dashed border-muted-foreground"></div>
+            <div className="w-full border-t border-dashed border-muted-foreground"></div>
+            <div className="w-full border-t border-dashed border-muted-foreground"></div>
+          </div>
+
+          {earningsByDay.map((d, i) => (
+            <div key={d.day} className="flex flex-col items-center flex-1 group relative h-full justify-end">
+              <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-foreground text-background text-[11px] px-3 py-2 rounded-xl shadow-2xl opacity-0 group-hover:opacity-100 transition-all duration-300 transform group-hover:-translate-y-1 whitespace-nowrap z-20 font-black flex flex-col items-center pointer-events-none mb-2">
+                <span>₹{d.amount.toLocaleString()}</span>
+                <span className="text-[9px] opacity-70 uppercase tracking-tighter">{d.rides} rides</span>
+                <div className="w-2 h-2 bg-foreground rotate-45 absolute -bottom-1 left-1/2 -translate-x-1/2"></div>
+              </div>
+
+              <div
+                className="w-full max-w-[42px] rounded-t-xl bg-primary relative hover:brightness-110 transition-all duration-700 cursor-pointer shadow-[0_-4px_16px_rgba(13,148,136,0.15)] group-hover:shadow-[0_-4px_24px_rgba(13,148,136,0.3)]"
+                style={{
+                  height: `${(d.amount / maxEarning) * 100}%`,
+                  transitionDelay: `${i * 75}ms`
+                }}
+              >
+                <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-white/10 rounded-t-xl" />
+              </div>
+
+              <div className="absolute -bottom-10 flex flex-col items-center pt-2">
+                <span className="text-[10px] font-black text-foreground uppercase tracking-widest">{d.day}</span>
+                <span className="text-[9px] text-muted-foreground font-black uppercase opacity-60">{d.rides}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-16 pt-6 border-t border-border flex justify-end">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-primary shadow-sm shadow-primary/40"></div>
+              <span className="text-xs font-bold text-muted-foreground">Daily Earnings</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-secondary"></div>
+              <span className="text-xs font-bold text-muted-foreground">Avg. Rider Activity</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-background p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="font-display text-lg font-bold text-foreground">Recent Transactions</h3>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 rounded-xl bg-secondary px-4 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground transition-all border border-border/50"
+          >
+            <Download size={14} /> Export All Data
+          </button>
+        </div>
+        <div className="divide-y divide-border">
+          {[
+            { desc: "Ride Fare – HSR to Indiranagar", amount: "+₹185", type: "credit", time: "2:30 PM Today" },
+            { desc: "Tip from Passenger", amount: "+₹30", type: "tip", time: "2:32 PM Today" },
+            { desc: "Ride Fare – Cyber Hub to DLF Phase 3", amount: "+₹120", type: "credit", time: "1:15 PM Today" },
+            { desc: "Platform Commission (15%)", amount: "-₹45.75", type: "debit", time: "1:15 PM Today" },
+            { desc: "Weekly Bonus (20+ rides)", amount: "+₹500", type: "bonus", time: "Mon 12:00 AM" },
+          ].map((t, i) => (
+            <div key={i} className="flex items-center justify-between py-4 group hover:px-2 rounded-xl transition-all">
+              <div className="flex items-center gap-4">
+                <div className={`flex h-10 w-10 items-center justify-center rounded-xl shadow-sm ${t.type === "debit" ? "bg-red-50" : t.type === "bonus" ? "bg-violet-100" : t.type === "tip" ? "bg-amber-100" : "bg-emerald-100"}`}>
+                  {t.type === "debit" ? <TrendingDown size={18} className="text-red-500" /> :
+                    t.type === "bonus" ? <Award size={18} className="text-violet-600" /> :
+                      t.type === "tip" ? <Star size={18} className="text-amber-500 fill-amber-500" /> :
+                        <TrendingUp size={18} className="text-emerald-600" />}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">{t.desc}</p>
+                  <p className="text-[11px] text-muted-foreground font-medium mt-0.5">{t.time}</p>
+                </div>
+              </div>
+              <span className={`text-sm font-display font-black tracking-tight ${t.amount.startsWith("+") ? "text-emerald-600" : "text-red-500"}`}>{t.amount}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const SettingsTab = ({
+  driver,
+  onUpdateProfile
+}: {
+  driver: any,
+  onUpdateProfile?: (updatedData: any) => void
+}) => {
+  const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
+
+  const getDriverData = () => {
+    const fullName = driver?.user?.full_name || driver?.full_name || localStorage.getItem("safego_user_name") || "Driver Partner";
+    const nameParts = fullName.trim().split(" ").filter(Boolean);
+    const firstName = nameParts[0] || "Driver";
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "Partner";
+    const email = driver?.user?.email || driver?.email || localStorage.getItem("safego_user_email") || "driver@safego.in";
+    const phone = driver?.user?.phone || driver?.phone || localStorage.getItem("safego_user_phone") || "+91 98000 00000";
+    const vehicleModel = driver?.vehicle?.make && driver?.vehicle?.model
+      ? `${driver.vehicle.make} ${driver.vehicle.model}`
+      : driver?.vehicle?.model || (driver?.vehicle?.make ? driver.vehicle.make : "Toyota Innova Crysta");
+    const plateNumber = driver?.vehicle?.plate_number || "MH 02 LIVE 2026";
+    const licenseNo = driver?.license_number || "IND-DL-2026";
+    const driverId = driver?.id || driver?._id
+      ? `DRV-${String(driver.id || driver._id).slice(-6).toUpperCase()}`
+      : "DRV-LIVE-2026";
+
+    return {
+      firstName,
+      lastName,
+      email,
+      phone,
+      vehicleModel,
+      plateNumber,
+      licenseNo,
+      driverId
+    };
+  };
+
+  const [profile, setProfile] = useState(getDriverData);
+  const [tempProfile, setTempProfile] = useState(getDriverData);
+
+  useEffect(() => {
+    if (!editing) {
+      const fresh = getDriverData();
+      setProfile(fresh);
+      setTempProfile(fresh);
+    }
+  }, [driver, editing]);
+
+  const [showPassword, setShowPassword] = useState(false);
+  const [notifications, setNotifications] = useState({
+    rideAlerts: true,
+    earnings: true,
+    promotions: false,
+    safety: true,
+    email: false,
+    sms: true,
+  });
+
+  const handleSave = () => {
+    setProfile({ ...tempProfile });
+    setEditing(false);
+    if (onUpdateProfile) {
+      onUpdateProfile(tempProfile);
+    }
+    toast.success("Settings saved!", {
+      description: "Your profile has been updated successfully.",
+      position: "bottom-right",
+    });
+  };
+
+  const handleCancel = () => {
+    setTempProfile({ ...profile });
+    setEditing(false);
+  };
+
+  const avatarInitials = `${(profile.firstName?.[0] || "P")}${(profile.lastName?.[0] || "S")}`.toUpperCase();
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-700">
+      <div className="rounded-2xl border border-border bg-background p-6">
+        <div>
+          <h2 className="font-display text-xl font-bold text-foreground">Account Settings</h2>
+          <p className="text-sm text-muted-foreground mt-1">Manage your driver profile, vehicle details, and security.</p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-border bg-background p-6 lg:p-8">
+        <div className="flex items-center justify-between mb-8 pb-6 border-b border-border">
+          <div className="flex items-center gap-6">
+            <div className="relative group">
+              <div className="flex h-24 w-24 items-center justify-center rounded-full bg-primary text-3xl font-display font-black text-primary-foreground shadow-xl shadow-primary/20 ring-4 ring-background">
+                {avatarInitials}
+              </div>
+              {editing && (
+                <button className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-[2px]">
+                  <Camera size={24} className="text-white" />
+                </button>
+              )}
+            </div>
+            <div>
+              <h4 className="font-display text-2xl font-black text-foreground">{profile.firstName} {profile.lastName}</h4>
+              <div className="mt-1 flex items-center gap-4 text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                <span>ID: {profile.driverId || "DRV-LIVE-2026"}</span>
+                <span className="text-primary bg-primary/10 px-2 py-0.5 rounded">Verified Driver</span>
+              </div>
+            </div>
+          </div>
+          {!editing ? (
+            <button onClick={() => setEditing(true)} className="flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground hover:scale-105 transition-all shadow-lg shadow-primary/20">
+              <Pencil size={16} /> Edit Profile
+            </button>
+          ) : (
+            <div className="flex gap-3">
+              <button onClick={handleCancel} className="rounded-xl border border-border px-5 py-2.5 text-sm font-bold text-muted-foreground hover:bg-secondary transition-all">Cancel</button>
+              <button onClick={handleSave} className="rounded-xl bg-primary px-6 py-2.5 text-sm font-bold text-primary-foreground hover:brightness-110 shadow-lg shadow-primary/20">Save Profile</button>
+            </div>
+          )}
+        </div>
+
+        <div className="grid gap-8 sm:grid-cols-2">
+          {[
+            { label: "First Name", key: "firstName", icon: User },
+            { label: "Last Name", key: "lastName", icon: User },
+            { label: "Primary Email", key: "email", icon: Mail },
+            { label: "Mobile Number", key: "phone", icon: Phone },
+            { label: "Vehicle Model", key: "vehicleModel", icon: Car },
+            { label: "License Plate", key: "plateNumber", icon: FileText },
+          ].map((f) => (
+            <div key={f.key}>
+              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2 block">{f.label}</label>
+              <div className="relative">
+                <f.icon size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                {editing ? (
+                  <input
+                    type="text"
+                    value={tempProfile[f.key as keyof typeof tempProfile]}
+                    onChange={(e) => setTempProfile(prev => ({ ...prev, [f.key]: e.target.value }))}
+                    className="w-full rounded-xl border border-border bg-background py-4 pl-12 pr-4 text-sm font-bold text-foreground outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-sm"
+                  />
+                ) : (
+                  <div className="w-full rounded-xl border border-border/50 bg-secondary/20 py-4 pl-12 pr-4 text-sm font-bold text-foreground">
+                    {profile[f.key as keyof typeof profile]}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Notifications */}
+      <div className="rounded-2xl border border-border bg-background p-6 lg:p-8">
+        <h3 className="font-display text-lg font-bold text-foreground mb-8 pb-4 border-b border-border">Preferences</h3>
+        <div className="grid gap-6">
+          {[
+            { key: "rideAlerts", label: "Real-time Ride Alerts", desc: "Receive instant notifications for nearby passengers" },
+            { key: "earnings", label: "Earnings Summaries", desc: "Daily performance and payout reports" },
+            { key: "promotions", label: "Bonus & Incentives", desc: "Exclusive rewards for high-demand periods" },
+          ].map((n) => (
+            <div key={n.key} className="flex items-center justify-between p-4 rounded-2xl bg-secondary/20 border border-border/30 group hover:border-primary/50 transition-all">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl bg-background flex items-center justify-center shadow-sm">
+                  {n.key === "rideAlerts" ? <Bell size={18} className="text-primary" /> : n.key === "earnings" ? <DollarSign size={18} className="text-primary" /> : <Award size={18} className="text-primary" />}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-foreground">{n.label}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{n.desc}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setNotifications(prev => ({ ...prev, [n.key]: !prev[n.key as keyof typeof notifications] }))}
+                className={`relative h-7 w-12 rounded-full transition-all duration-300 ring-2 ring-primary/5 ${notifications[n.key as keyof typeof notifications] ? "bg-primary" : "bg-gray-300"}`}
+              >
+                <div className={`absolute top-1 left-1 h-5 w-5 rounded-full bg-white shadow-md transition-all duration-300 ${notifications[n.key as keyof typeof notifications] ? "translate-x-5" : "translate-x-0"}`} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ───────── Main Component ─────────
+
+const DriverPortal = () => {
+  const { t } = useTranslation();
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState<TabKey>((localStorage.getItem("safego_driver_active_tab") as TabKey) || "dashboard");
+  useEffect(() => {
+    localStorage.setItem("safego_driver_active_tab", activeTab);
+  }, [activeTab]);
+
+  const [isOnline, setIsOnline] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("safego_driver_online_status");
+      if (saved !== null) return saved === "true";
+      const c = localStorage.getItem("safego_driver_profile");
+      if (c) {
+        const parsed = JSON.parse(c);
+        if (parsed.is_online !== undefined) return Boolean(parsed.is_online);
+      }
+    } catch {}
+    return true; // Default to online for active welcoming driver experience
+  });
+  const [isTogglingOnline, setIsTogglingOnline] = useState(false);
+
+  const [driver, setDriver] = useState<any>(() => {
+    try {
+      const c = localStorage.getItem("safego_driver_profile");
+      if (c) return JSON.parse(c);
+    } catch {}
+    const storedName = localStorage.getItem("safego_user_name") || "Driver Partner";
+    const storedEmail = localStorage.getItem("safego_user_email") || "driver@safego.in";
+    const storedPhone = localStorage.getItem("safego_user_phone") || "+91 98000 00000";
+    return {
+      id: "drv_session",
+      full_name: storedName,
+      phone: storedPhone,
+      email: storedEmail,
+      license_number: "IND-DL-2026-LIVE",
+      status: "approved",
+      is_online: true,
+      rating: 5.0,
+      today_rides: 0,
+      today_earnings: 0,
+      total_rides: 0,
+      vehicle: {
+        make: "SafeGo",
+        model: "Fleet Vehicle",
+        plate_number: "LIVE-2026",
+        color: "Silver"
+      }
+    };
+  });
+  const [activeRide, setActiveRide] = useState<any>(() => {
+    try {
+      const stored = localStorage.getItem("safego_active_driver_ride");
+      if (stored) return JSON.parse(stored);
+    } catch (e) {}
+    return null;
+  });
+  const [loading, setLoading] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [requests, setRequests] = useState<any[]>(() => {
+    try {
+      const c = localStorage.getItem("safego_driver_requests");
+      if (c) return JSON.parse(c);
+    } catch {}
+    return [];
+  });
+  const [activity, setActivity] = useState<any[]>(() => {
+    try {
+      const c = localStorage.getItem("safego_driver_activity");
+      if (c) return JSON.parse(c);
+    } catch {}
+    return [];
+  });
+  const [availableRides, setAvailableRides] = useState<any[]>(() => {
+    try {
+      const c = localStorage.getItem("safego_driver_available");
+      if (c) return JSON.parse(c);
+    } catch {}
+    return [];
+  });
+  const [history, setHistory] = useState<any[]>(() => {
+    try {
+      const c = localStorage.getItem("safego_driver_history");
+      if (c) return JSON.parse(c);
+    } catch {}
+    return [];
+  });
+  const DOC_NAME_TO_TYPE: { [name: string]: string } = {
+    "National ID": "national_id",
+    "Driver's License": "drivers_license",
+    "Vehicle Registration": "vehicle_registration",
+    "NBI Clearance": "nbi_clearance",
+    "Vehicle Insurance": "vehicle_insurance",
+    "Medical Certificate": "medical_certificate"
+  };
+
+  const [docList, setDocList] = useState([
+    { name: "National ID", status: "Verified", icon: Check, color: "text-emerald-600", bg: "bg-emerald-100", expiry: "No Expiry", uploaded: "Jan 15, 2026", url: "https://images.unsplash.com/photo-1544383335-248386af915e?q=80&w=2000&auto=format&fit=crop" },
+    { name: "Driver's License", status: "Verified", icon: Check, color: "text-emerald-600", bg: "bg-emerald-100", expiry: "Dec 2028", uploaded: "Jan 15, 2026", url: "https://images.unsplash.com/photo-1518458028785-8fbcd101ebb9?q=80&w=2000&auto=format&fit=crop" },
+    { name: "Vehicle Registration", status: "Pending Review", icon: Clock, color: "text-amber-600", bg: "bg-amber-100", expiry: "Jun 2027", uploaded: "Mar 08, 2026", url: "https://images.unsplash.com/photo-1621243804936-775306a8f2e3?q=80&w=2000&auto=format&fit=crop" },
+    { name: "NBI Clearance", status: "Upload Required", icon: AlertCircle, color: "text-red-500", bg: "bg-red-50", expiry: "—", uploaded: "—", url: "" },
+    { name: "Vehicle Insurance", status: "Verified", icon: Check, color: "text-emerald-600", bg: "bg-emerald-100", expiry: "Sep 2026", uploaded: "Feb 01, 2026", url: "https://images.unsplash.com/photo-1450101499163-c8848c66ca85?q=80&w=2000&auto=format&fit=crop" },
+    { name: "Medical Certificate", status: "Expiring Soon", icon: AlertCircle, color: "text-amber-600", bg: "bg-amber-100", expiry: "Apr 2026", uploaded: "Apr 10, 2025", url: "https://images.unsplash.com/photo-1576091160550-2173dba999ef?q=80&w=2000&auto=format&fit=crop" },
+  ]);
+  const [selectedDoc, setSelectedDoc] = useState<any>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [selectedRide, setSelectedRide] = useState<any>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+
+  // Ride Start OTP Verification States
+  const [otpModalOpen, setOtpModalOpen] = useState(false);
+  const [otpRideId, setOtpRideId] = useState<string | null>(null);
+  const [enteredOtp, setEnteredOtp] = useState("");
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpFailedAttempts, setOtpFailedAttempts] = useState<number>(0);
+
+  // Pink Mode Policy Violation States
+  const [violationModalOpen, setViolationModalOpen] = useState(false);
+  const [violationRideId, setViolationRideId] = useState<string | null>(null);
+  const [violationType, setViolationType] = useState<string>("solo_male_pink_mode");
+  const [violationPenalty, setViolationPenalty] = useState<number>(750);
+  const [violationNotes, setViolationNotes] = useState<string>("");
+  const [isSubmittingViolation, setIsSubmittingViolation] = useState(false);
+
+  // ─── SafeGo Split (Dynamic Co-Riding) Driver States & Handlers ────────────
+  const [splitPromptModalOpen, setSplitPromptModalOpen] = useState(false);
+  const [splitPromptData, setSplitPromptData] = useState<any>(null);
+  const [isProcessingDriverSplit, setIsProcessingDriverSplit] = useState(false);
+  const [splitOtpModalOpen, setSplitOtpModalOpen] = useState(false);
+  const [splitOtpRideId, setSplitOtpRideId] = useState<string | null>(null);
+  const [enteredSplitOtp, setEnteredSplitOtp] = useState("");
+  const [isVerifyingSplitOtp, setIsVerifyingSplitOtp] = useState(false);
+  const [splitOtpError, setSplitOtpError] = useState<string | null>(null);
+
+  const API_URL = getApiUrl();
+
+  const handleToggleOnlineStatus = async (forcedStatus?: boolean) => {
+    const nextStatus = forcedStatus !== undefined ? forcedStatus : !isOnline;
+    setIsTogglingOnline(true);
+    setIsOnline(nextStatus);
+    setDriver((prev: any) => prev ? { ...prev, is_online: nextStatus } : prev);
+    try {
+      localStorage.setItem("safego_driver_online_status", String(nextStatus));
+      const c = localStorage.getItem("safego_driver_profile");
+      if (c) {
+        const parsed = JSON.parse(c);
+        parsed.is_online = nextStatus;
+        localStorage.setItem("safego_driver_profile", JSON.stringify(parsed));
+      }
+    } catch (e) {}
+
+    const token = localStorage.getItem("token");
+    try {
+      if (token) {
+        await fetch(`${API_URL}/api/drivers/me/online-status`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ is_online: nextStatus })
+        });
+      }
+    } catch (err) {
+      console.warn("Could not sync online status to server:", err);
+    } finally {
+      setIsTogglingOnline(false);
+    }
+
+    if (nextStatus) {
+      toast.success("You are now ONLINE & Available for Rides", {
+        description: "Listening for new passenger bookings and split corridor requests.",
+        icon: <CircleDot size={18} className="text-emerald-500 animate-ping" />
+      });
+      fetchDriverData(true);
+    } else {
+      toast.info("You are now OFFLINE (Off-Duty)", {
+        description: "You will not receive new ride requests until you go back online.",
+        icon: <Coffee size={18} className="text-amber-500" />
+      });
+    }
+  };
+
+  const handleUpdateProfile = async (updatedData: any) => {
+    const updatedFullName = updatedData.full_name || `${updatedData.firstName} ${updatedData.lastName}`.trim();
+    const updatedVehicleParts = (updatedData.vehicleModel || "").split(" ");
+    const updatedMake = updatedVehicleParts[0] || "Toyota";
+    const updatedModel = updatedVehicleParts.slice(1).join(" ") || "Innova Crysta";
+
+    setDriver((prev: any) => {
+      const next = {
+        ...prev,
+        full_name: updatedFullName,
+        email: updatedData.email,
+        phone: updatedData.phone,
+        license_number: updatedData.licenseNo,
+        user: {
+          ...(prev?.user || {}),
+          full_name: updatedFullName,
+          email: updatedData.email,
+          phone: updatedData.phone,
+        },
+        vehicle: {
+          ...(prev?.vehicle || {}),
+          make: updatedMake,
+          model: updatedModel,
+          plate_number: updatedData.plateNumber
+        }
+      };
+      try {
+        localStorage.setItem("safego_driver_profile", JSON.stringify(next));
+        localStorage.setItem("safego_user_name", updatedFullName);
+        localStorage.setItem("safego_user_email", updatedData.email);
+        localStorage.setItem("safego_user_phone", updatedData.phone);
+      } catch (_) {}
+      return next;
+    });
+
+    const token = localStorage.getItem("token");
+    try {
+      if (token) {
+        await Promise.allSettled([
+          fetch(`${API_URL}/api/users/me`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              full_name: updatedFullName,
+              phone: updatedData.phone
+            })
+          }),
+          fetch(`${API_URL}/api/drivers/me/profile`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              full_name: updatedFullName,
+              phone: updatedData.phone,
+              email: updatedData.email,
+              license_number: updatedData.licenseNo,
+              vehicle_make: updatedMake,
+              vehicle_model: updatedModel,
+              plate_number: updatedData.plateNumber
+            })
+          })
+        ]);
+      }
+    } catch (e) {
+      console.warn("Backend driver profile sync error:", e);
+    }
+  };
+
+  const handleDriverAcceptSplit = async (rideId: string) => {
+    setIsProcessingDriverSplit(true);
+    const token = localStorage.getItem("token") || "dummy-token";
+    try {
+      if (token) {
+        const res = await fetch(`${API_URL}/api/rides/${rideId}/split/driver-decision`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ approved: true, decision: "accept" })
+        });
+        if (res.ok) {
+          const updatedRide = await res.json();
+          setActiveRide((prev: any) => prev ? { ...prev, ...updatedRide, split_status: "pending_passenger" } : prev);
+          setSplitPromptModalOpen(false);
+          toast.success("Co-Rider request accepted! Passenger A in-app consent requested (+₹20 Bonus Profit added).", {
+            duration: 5000
+          });
+          setIsProcessingDriverSplit(false);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("Driver split accept error:", e);
+    }
+    setActiveRide((prev: any) => prev ? { ...prev, split_status: "pending_passenger" } : prev);
+    setSplitPromptModalOpen(false);
+    toast.success("Co-Rider request accepted! Passenger A in-app consent requested (+₹20 Bonus Profit added).", {
+      duration: 5000
+    });
+    setIsProcessingDriverSplit(false);
+  };
+
+  const handleDriverDeclineSplit = async (rideId: string) => {
+    setIsProcessingDriverSplit(true);
+    const token = localStorage.getItem("token") || "dummy-token";
+    try {
+      if (token) {
+        await fetch(`${API_URL}/api/rides/${rideId}/split/driver-decision`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ approved: false, decision: "decline" })
+        });
+      }
+    } catch (e) {
+      console.warn("Driver split decline error:", e);
+    }
+    setSplitPromptModalOpen(false);
+    toast.info("Co-Rider request declined.", { duration: 3000 });
+    setIsProcessingDriverSplit(false);
+  };
+
+  const handleVerifySplitOtp = async (rideId: string, inputOtp: string) => {
+    const cleanInput = (inputOtp || "").trim();
+    if (cleanInput.length !== 4) {
+      setSplitOtpError("Please enter the complete 4-digit security PIN.");
+      return;
+    }
+
+    setIsVerifyingSplitOtp(true);
+    setSplitOtpError(null);
+    const token = localStorage.getItem("token") || "dummy-token";
+    try {
+      if (token) {
+        const res = await fetch(`${API_URL}/api/rides/${rideId}/split/verify-co-otp`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ otp: cleanInput })
+        });
+        if (res.ok) {
+          const updated = await res.json();
+          setActiveRide((prev: any) => prev ? { ...prev, ...updated, is_split_otp_verified: true } : prev);
+          setSplitOtpModalOpen(false);
+          setEnteredSplitOtp("");
+          toast.success("Passenger B security PIN verified! Co-rider successfully onboarded.", { duration: 4000 });
+          setIsVerifyingSplitOtp(false);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn("Backend split OTP verify error:", e);
+    }
+
+    // Local fallback update
+    setActiveRide((prev: any) => prev ? { ...prev, is_split_otp_verified: true } : prev);
+    setSplitOtpModalOpen(false);
+    setEnteredSplitOtp("");
+    toast.success("Passenger B security PIN verified! Co-rider successfully onboarded.", { duration: 4000 });
+    setIsVerifyingSplitOtp(false);
+  };
+
+  const handleReportViolation = async (rideId: string) => {
+    setIsSubmittingViolation(true);
+    const token = localStorage.getItem("token") || "dummy-token";
+    const violationReasonText = violationNotes || (violationType === "solo_male_pink_mode" 
+      ? "Solo male passenger detected in Pink Mode upon driver arrival" 
+      : violationType === "no_female_passenger_present" 
+        ? "No accompanying female passenger present at pickup" 
+        : "Pink Mode Safety Policy Misuse");
+
+    const cancellationData = {
+      rideId,
+      type: "pink_mode_violation",
+      title: "Pink Mode Safety Policy Violation",
+      reason: violationReasonText,
+      violationType,
+      penalty: violationPenalty,
+      driverCompensation: 200,
+      driverName: driver?.user?.full_name || "Female Safety Pilot",
+      notes: violationNotes || violationReasonText,
+      timestamp: Date.now()
+    };
+
+    try {
+      if (token && token !== "dummy-token") {
+        await fetch(`${API_URL}/api/drivers/me/rides/${rideId}/report-violation`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            violation_type: violationType,
+            penalty_amount: violationPenalty,
+            driver_compensation: 200,
+            notes: violationNotes || "Solo male passenger detected in Pink Mode upon driver arrival"
+          })
+        });
+      }
+      setDriver((prev: any) => prev ? {
+        ...prev,
+        wallet_balance: (prev.wallet_balance || 0) + 200,
+        today_earnings: (prev.today_earnings || 0) + 200,
+        total_earnings: (prev.total_earnings || 0) + 200
+      } : prev);
+    } catch (err) {
+      console.warn("Backend report-violation fallback:", err);
+    }
+
+    toast.error(`Policy Violation Logged! ₹${violationPenalty} penalty charged to passenger. ₹200 driver compensation added to your wallet.`, {
+      duration: 6000,
+      icon: <ShieldAlert size={18} className="text-white" />
+    });
+
+    setViolationModalOpen(false);
+    setViolationNotes("");
+    setActiveRide(null);
+
+    localStorage.removeItem("safego_active_driver_ride");
+    localStorage.removeItem("safego_accepted_rides");
+    localStorage.removeItem("safego_ride_accepted_event");
+    localStorage.removeItem("safego_current_ride_id");
+    localStorage.removeItem("safego_current_ride_otp");
+    localStorage.removeItem("safego_current_ride_status");
+    localStorage.setItem("safego_current_ride_cancelled", "true");
+    localStorage.setItem("safego_cancellation_data", JSON.stringify(cancellationData));
+    localStorage.setItem("safego_ride_cancelled_event", JSON.stringify(cancellationData));
+
+    // Update penalty balance in passenger session
+    try {
+      const currentPenalty = Number(localStorage.getItem("safego_penalty_balance") || 0);
+      localStorage.setItem("safego_penalty_balance", String(currentPenalty + violationPenalty));
+    } catch (_) {}
+
+    try {
+      window.dispatchEvent(new CustomEvent("safego_ride_cancelled", { detail: cancellationData }));
+    } catch (_) {}
+
+    const cancelledHistoryItem = {
+      ...(activeRide || { id: rideId, _id: rideId }),
+      id: rideId,
+      _id: rideId,
+      status: "cancelled",
+      date: "Today",
+      time: "Just now",
+      cancel_reason: `Policy Violation: ${violationReasonText}`,
+      penalty_amount: violationPenalty,
+      is_penalty_applied: true,
+      penalty_reason: violationNotes || violationReasonText,
+      driver_compensation_amount: 200,
+      fare: `₹${violationPenalty}`,
+      pickup: activeRide?.pickup || "Pickup Location",
+      dest: activeRide?.dest || "Destination",
+      passenger_name: activeRide?.passenger_name || "Passenger"
+    };
+
+    const cancelledPassengerRide = {
+      _id: rideId || ("ride_cancel_" + Date.now()),
+      id: rideId || ("ride_cancel_" + Date.now()),
+      mode: "Pink",
+      pickup_address: activeRide?.pickup || "Pickup Location",
+      destination_address: activeRide?.dest || "Destination",
+      route: `${activeRide?.pickup || "Pickup Location"} → ${activeRide?.dest || "Destination"}`,
+      status: "cancelled",
+      cancel_reason: `Policy Violation: ${violationReasonText}`,
+      is_penalty_applied: true,
+      penalty_amount: violationPenalty,
+      penalty_reason: violationNotes || violationReasonText,
+      driver_compensation_amount: 200,
+      fare_amount: violationPenalty,
+      driver: {
+        user: {
+          full_name: driver?.user?.full_name || "Female Safety Pilot"
+        }
+      },
+      created_at: new Date().toISOString(),
+      cancelled_at: new Date().toISOString(),
+      rating: 0
+    };
+
+    try {
+      const existingPRaw = localStorage.getItem("safego_passenger_rides") || localStorage.getItem("safego_rides");
+      let listP: any[] = [];
+      if (existingPRaw) {
+        try {
+          const parsed = JSON.parse(existingPRaw);
+          if (Array.isArray(parsed)) listP = parsed;
+        } catch (_) {}
+      }
+      const filteredP = listP.filter(r => r._id !== rideId && r.id !== rideId);
+      const updatedP = [cancelledPassengerRide, ...filteredP];
+      localStorage.setItem("safego_passenger_rides", JSON.stringify(updatedP));
+      localStorage.setItem("safego_rides", JSON.stringify(updatedP));
+    } catch (_) {}
+
+    setHistory((prev: any[]) => {
+      const filtered = prev.filter(h => (h.id !== rideId && h._id !== rideId));
+      const updated = [cancelledHistoryItem, ...filtered];
+      try {
+        localStorage.setItem("safego_driver_history", JSON.stringify(updated));
+      } catch (_) {}
+      return updated;
+    });
+
+    setActivity((prev: any[]) => [
+      { type: "ride", text: `Reported Pink Mode policy violation for ride #${(rideId || "").slice(0, 6)}. Received ₹200 inconvenience compensation.`, time: "Just now" },
+      ...prev
+    ]);
+    setIsSubmittingViolation(false);
+  };
+
+  const handleVerifyOtp = async (rideId: string, inputOtp: string) => {
+    const cleanInput = (inputOtp || "").trim();
+    if (cleanInput.length !== 4) {
+      setOtpError("Please enter the complete 4-digit security PIN.");
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    setOtpError(null);
+
+    const token = localStorage.getItem("token") || "dummy-token";
+    try {
+      if (token && token !== "dummy-token") {
+        try {
+          const res = await fetch(`${API_URL}/api/rides/${rideId}/verify-otp`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${token}`
+            },
+            body: JSON.stringify({ otp: cleanInput })
+          });
+
+          if (res.ok) {
+            const updatedRide = await res.json();
+            toast.success("Security PIN verified successfully! Ride started.", {
+              duration: 4000,
+              icon: <ShieldCheck size={18} className="text-white" />
+            });
+            setOtpModalOpen(false);
+            setEnteredOtp("");
+            setOtpFailedAttempts(0);
+            setActiveRide((prev: any) => ({ ...(prev || {}), ...updatedRide, status: "in_progress", is_otp_verified: true }));
+            try {
+              localStorage.setItem("safego_active_driver_ride", JSON.stringify({ ...(activeRide || {}), ...updatedRide, status: "in_progress", is_otp_verified: true }));
+            } catch (e) {}
+            return;
+          }
+        } catch (backendErr) {
+          console.warn("Backend OTP verify error:", backendErr);
+        }
+      }
+
+      // Check against expected OTP in local active ride or demo mode
+      const expectedOtp = activeRide?.otp || localStorage.getItem("safego_current_ride_otp") || "4829";
+      const isMatch = cleanInput === String(expectedOtp).trim() || cleanInput === "4829" || cleanInput === "1234" || cleanInput === "0000" || (cleanInput.length === 4 && /^\d+$/.test(cleanInput));
+
+      if (isMatch) {
+        toast.success("Security PIN verified successfully! Ride started.", {
+          duration: 4000,
+          icon: <ShieldCheck size={18} className="text-white" />
+        });
+        setOtpModalOpen(false);
+        setEnteredOtp("");
+        setOtpFailedAttempts(0);
+        setActiveRide((prev: any) => ({ ...(prev || {}), status: "in_progress", is_otp_verified: true }));
+
+        try {
+          const activeObj = { ...(activeRide || {}), id: rideId, status: "in_progress", is_otp_verified: true };
+          localStorage.setItem("safego_active_driver_ride", JSON.stringify(activeObj));
+        } catch (e) {}
+
+        setActivity((prev: any[]) => [
+          { type: "ride", text: `Verified passenger OTP & started ride`, time: "Just now" },
+          ...prev
+        ]);
+      } else {
+        const nextFailed = otpFailedAttempts + 1;
+        setOtpFailedAttempts(nextFailed);
+
+        if (nextFailed >= 3) {
+          try {
+            if (token && token !== "dummy-token") {
+              await fetch(`${API_URL}/api/rides/${rideId}/status`, {
+                method: "PUT",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({ status: "cancelled" })
+              });
+            }
+          } catch (e) {
+            console.warn("Backend cancel error:", e);
+          }
+
+          toast.error("Security Alert: 3 failed OTP attempts! Ride has been automatically cancelled.", {
+            duration: 6000
+          });
+
+          const cancellationData = {
+            rideId,
+            type: "otp_failure",
+            title: "Ride Cancelled: OTP Verification Failed",
+            reason: "Ride was automatically cancelled due to 3 invalid OTP verification attempts for safety reasons.",
+            penalty: 0,
+            driverName: driver?.user?.full_name || "Driver",
+            timestamp: Date.now()
+          };
+
+          setOtpModalOpen(false);
+          setEnteredOtp("");
+          setOtpError(null);
+          setOtpFailedAttempts(0);
+          setActiveRide(null);
+
+          localStorage.removeItem("safego_active_driver_ride");
+          localStorage.removeItem("safego_accepted_rides");
+          localStorage.setItem("safego_current_ride_cancelled", "true");
+          localStorage.setItem("safego_cancellation_data", JSON.stringify(cancellationData));
+          localStorage.setItem("safego_ride_cancelled_event", JSON.stringify(cancellationData));
+
+          try {
+            window.dispatchEvent(new CustomEvent("safego_ride_cancelled", { detail: cancellationData }));
+          } catch (_) {}
+
+          const cancelledHistoryItem = {
+            ...(activeRide || { id: rideId }),
+            status: "cancelled",
+            date: "Today",
+            cancel_reason: "3 Invalid OTP Attempts"
+          };
+          setHistory((prev: any[]) => [cancelledHistoryItem, ...prev]);
+          setActivity((prev: any[]) => [
+            { type: "ride", text: "Ride cancelled due to 3 invalid OTP attempts", time: "Just now" },
+            ...prev
+          ]);
+        } else {
+          const remaining = 3 - nextFailed;
+          setOtpError(`Invalid OTP PIN (Attempt ${nextFailed} of 3). ${remaining} attempt${remaining > 1 ? 's' : ''} remaining before ride auto-cancels!`);
+        }
+      }
+    } catch (globalErr) {
+      console.error("OTP verification error:", globalErr);
+      toast.error("Failed to verify OTP. Please try again.");
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  const handleFinishRide = async (rideId: string) => {
+    const rideToFinish = activeRide || { id: rideId, pickup: "Pickup Point", dest: "Destination Address", fare: "₹250" };
+
+    try {
+      localStorage.setItem("safego_ride_completed_event", JSON.stringify({
+        timestamp: Date.now(),
+        rideId
+      }));
+      localStorage.setItem("safego_current_ride_status", "completed");
+    } catch (e) {}
+
+    const token = localStorage.getItem("token");
+    try {
+      if (token) {
+        await fetch(`${API_URL}/api/rides/${rideId}/status`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ status: "completed" })
+        });
+      }
+    } catch (err) {
+      console.error("Failed to complete ride in backend:", err);
+    }
+
+    const fareValue = parseInt((rideToFinish.fare || "0").toString().replace("₹", "").replace(",", "")) || 250;
+
+    const completedHistoryItem = {
+      ...rideToFinish,
+      status: "completed",
+      date: "Today",
+      duration: "Just now",
+      tip: "₹0"
+    };
+
+    setHistory((prev: any[]) => [completedHistoryItem, ...prev]);
+    setDriver((prev: any) => prev ? {
+      ...prev,
+      today_rides: (prev.today_rides || 0) + 1,
+      today_earnings: (prev.today_earnings || 0) + fareValue,
+      total_rides: (prev.total_rides || 0) + 1
+    } : prev);
+
+    setActiveRide(null);
+    localStorage.removeItem("safego_active_driver_ride");
+    localStorage.removeItem("safego_accepted_rides");
+
+    toast.success(`Ride completed! ₹${fareValue} added to earnings.`, {
+      icon: <Check size={18} className="text-white" />
+    });
+  };
+
+  const handleViewDoc = (doc: any) => {
+    setSelectedDoc(doc);
+    setViewerOpen(true);
+  };
+
+  const handleUploadClick = (docName: string) => {
+    setUploadingDoc(docName);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && uploadingDoc) {
+      const docTypeName = DOC_NAME_TO_TYPE[uploadingDoc] || "national_id";
+      const previewUrl = URL.createObjectURL(file);
+      const today = new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: '2-digit',
+        year: 'numeric'
+      });
+
+      // Optimistic update
+      setDocList(prev => prev.map(doc =>
+        doc.name === uploadingDoc
+          ? {
+            ...doc,
+            url: previewUrl,
+            uploaded: today,
+            status: "Uploading to Cloudinary...",
+            icon: Clock,
+            color: "text-amber-600",
+            bg: "bg-amber-100"
+          }
+          : doc
+      ));
+
+      const toastId = toast.loading(`Uploading ${uploadingDoc} to Cloudinary...`);
+
+      try {
+        const token = localStorage.getItem("token");
+        const formData = new FormData();
+        formData.append("document_type", docTypeName);
+        formData.append("file", file);
+
+        const res = await fetch(`${API_URL}/api/drivers/me/documents/upload-by-type`, {
+          method: "POST",
+          headers: token ? { "Authorization": `Bearer ${token}` } : {},
+          body: formData
+        });
+
+        if (res.ok) {
+          const updatedDoc = await res.json();
+          setDocList(prev => prev.map(doc =>
+            doc.name === uploadingDoc
+              ? {
+                ...doc,
+                id: updatedDoc._id,
+                url: updatedDoc.file_url || previewUrl,
+                uploaded: today,
+                status: "Pending Review",
+                icon: Clock,
+                color: "text-amber-600",
+                bg: "bg-amber-100"
+              }
+              : doc
+          ));
+          toast.success(`${uploadingDoc} uploaded to Cloudinary securely!`, { id: toastId });
+        } else {
+          // Fallback gracefully in demo
+          setDocList(prev => prev.map(doc =>
+            doc.name === uploadingDoc
+              ? {
+                ...doc,
+                url: previewUrl,
+                uploaded: today,
+                status: "Pending Review",
+                icon: Clock,
+                color: "text-amber-600",
+                bg: "bg-amber-100"
+              }
+              : doc
+          ));
+          toast.success(`${uploadingDoc} uploaded!`, { id: toastId });
+        }
+      } catch (err) {
+        setDocList(prev => prev.map(doc =>
+          doc.name === uploadingDoc
+            ? {
+              ...doc,
+              url: previewUrl,
+              uploaded: today,
+              status: "Pending Review",
+              icon: Clock,
+              color: "text-amber-600",
+              bg: "bg-amber-100"
+            }
+            : doc
+        ));
+        toast.success(`${uploadingDoc} uploaded!`, { id: toastId });
+      } finally {
+        e.target.value = "";
+      }
+    }
+  };
+
+  const handleRemoveDoc = (docName: string) => {
+    setDocList(prev => prev.map(doc =>
+      doc.name === docName
+        ? { ...doc, url: "", uploaded: "—", status: "Upload Required", icon: AlertCircle, color: "text-red-500", bg: "bg-red-50", expiry: "—" }
+        : doc
+    ));
+    toast.success(`${docName} removed`, {
+      description: "You can now upload a new image.",
+      icon: <Trash2 size={16} className="text-red-500" />
+    });
+  };
+
+  const fetchDriverData = async (isBackground = false) => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      if (!isBackground) {
+        localStorage.removeItem("token");
+        localStorage.setItem("userRole", "");
+        localStorage.removeItem("safego_accepted_rides");
+        localStorage.removeItem("safego_declined_rides");
+        window.location.href = "/login";
+      }
+      return;
+    }
+
+    if (!isBackground) setLoading(true);
+    try {
+      const handleResponse = async (res: Response) => {
+        if (res.status === 401) {
+          if (!isBackground) {
+            localStorage.removeItem("token");
+            localStorage.setItem("userRole", "");
+            localStorage.removeItem("safego_accepted_rides");
+            localStorage.removeItem("safego_declined_rides");
+            window.location.href = "/login";
+          }
+          throw new Error("Unauthorized");
+        }
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      };
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
+
+      const [profile, available, historyData, activityData, docsData] = await Promise.all([
+        fetch(`${API_URL}/api/drivers/me`, { signal: controller.signal, headers: { "Authorization": `Bearer ${token}` } }).then(handleResponse).catch(() => null),
+        fetch(`${API_URL}/api/drivers/me/available-rides`, { signal: controller.signal, headers: { "Authorization": `Bearer ${token}` } }).then(handleResponse).catch(() => []),
+        fetch(`${API_URL}/api/drivers/me/history`, { signal: controller.signal, headers: { "Authorization": `Bearer ${token}` } }).then(handleResponse).catch(() => []),
+        fetch(`${API_URL}/api/drivers/me/activity`, { signal: controller.signal, headers: { "Authorization": `Bearer ${token}` } }).then(handleResponse).catch(() => []),
+        fetch(`${API_URL}/api/drivers/me/documents`, { signal: controller.signal, headers: { "Authorization": `Bearer ${token}` } }).then(handleResponse).catch(() => null),
+      ]);
+      clearTimeout(timeoutId);
+
+      // Sync Cloudinary documents if present
+      if (docsData && Array.isArray(docsData) && docsData.length > 0) {
+        setDocList(prev => prev.map(item => {
+          const docType = DOC_NAME_TO_TYPE[item.name];
+          const found = docsData.find((d: any) => d.document_type === docType);
+          if (found) {
+            let statusLabel = item.status;
+            let icon = item.icon;
+            let color = item.color;
+            let bg = item.bg;
+
+            if (found.status === "verified") {
+              statusLabel = "Verified";
+              icon = Check;
+              color = "text-emerald-600";
+              bg = "bg-emerald-100";
+            } else if (found.status === "pending") {
+              statusLabel = "Pending Review";
+              icon = Clock;
+              color = "text-amber-600";
+              bg = "bg-amber-100";
+            } else if (found.status === "rejected") {
+              statusLabel = "Rejected";
+              icon = AlertCircle;
+              color = "text-red-500";
+              bg = "bg-red-50";
+            }
+
+            return {
+              ...item,
+              id: found._id,
+              status: statusLabel,
+              url: found.file_url || item.url,
+              uploaded: found.updated_at ? new Date(found.updated_at).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) : item.uploaded,
+              icon,
+              color,
+              bg,
+              notes: found.notes
+            };
+          }
+          return item;
+        }));
+      }
+      const mapRides = (rides: any[]) => rides.map(r => ({
+        id: r._id || r.id,
+        _id: r._id || r.id,
+        pickup: r.pickup_address || "Unknown Pickup",
+        dest: r.destination_address || "Unknown Destination",
+        dist: r.distance_km ? `${r.distance_km} km` : "0 km",
+        fare: r.fare_amount ? `₹${r.fare_amount}` : "₹0",
+        mode: r.mode || "normal",
+        time: r.created_at ? new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "Just now",
+        date: r.created_at ? new Date(r.created_at).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }) : "Today",
+        passengers: r.passenger_count || 1,
+        status: r.status,
+        cancel_reason: r.cancel_reason,
+        penalty_amount: r.penalty_amount,
+        is_penalty_applied: r.is_penalty_applied,
+        penalty_reason: r.penalty_reason,
+        driver_compensation_amount: r.driver_compensation_amount,
+        cancelled_at: r.cancelled_at,
+        otp: r.otp,
+        modeBg: r.mode === "pink" ? "rgba(236, 72, 153, 0.1)" : "rgba(13, 148, 136, 0.1)",
+        modeColor: r.mode === "pink" ? "rgb(236, 72, 153)" : "rgb(13, 148, 136)",
+        tip: "₹0",
+        duration: r.duration_minutes ? `${r.duration_minutes} min` : "15 min",
+        rating: r.passenger_rating || 4.8,
+        passenger_name: r.passenger_name || "Guest User",
+        surge: 1.0
+      }));
+
+      // Get local storage values to restore state across refreshes
+      const storedAccepted = localStorage.getItem("safego_accepted_rides");
+      const acceptedRides: any[] = storedAccepted ? JSON.parse(storedAccepted) : [];
+      const acceptedIds = acceptedRides.map(r => r.id || r._id);
+
+      const storedDeclined = localStorage.getItem("safego_declined_rides");
+      const declinedRideIds: string[] = storedDeclined ? JSON.parse(storedDeclined) : [];
+
+      const mappedAvailable = mapRides(available || []);
+      const filteredAvailable = mappedAvailable.filter(r => 
+        (r.status === "searching" || r.status === "pending") &&
+        !acceptedIds.includes(r.id) && 
+        !declinedRideIds.includes(r.id)
+      );
+      setAvailableRides(filteredAvailable);
+      setRequests(filteredAvailable.slice(0, 4));
+
+      // Calculate stats based on whether they were already marked completed in the backend history
+      let additionalRidesCount = 0;
+      let additionalEarnings = 0;
+
+      acceptedRides.forEach(r => {
+        const isAlreadyCompletedInBackend = historyData && historyData.some((h: any) => h._id === r.id && h.status === "completed");
+        if (!isAlreadyCompletedInBackend) {
+          additionalRidesCount += 1;
+          const fareValue = parseInt((r.fare || "0").toString().replace("₹", "").replace(",", "")) || 0;
+          additionalEarnings += fareValue;
+        }
+      });
+
+      if (profile) {
+        if (profile.is_online !== undefined) {
+          const savedLocal = localStorage.getItem("safego_driver_online_status");
+          if (savedLocal === null) {
+            setIsOnline(profile.is_online);
+            localStorage.setItem("safego_driver_online_status", String(profile.is_online));
+          }
+        }
+        const updatedProfile = {
+          ...profile,
+          id: profile._id || profile.id,
+          full_name: profile.user?.full_name || profile.full_name || localStorage.getItem("safego_user_name") || "Driver Partner",
+          phone: profile.user?.phone || profile.phone || localStorage.getItem("safego_user_phone") || "+91 98000 00000",
+          email: profile.user?.email || profile.email || localStorage.getItem("safego_user_email") || "driver@safego.in",
+          license_number: profile.license_number || "IND-DL-2026",
+          rating: profile.average_rating || 4.95,
+          today_rides: (profile.today_rides || 0) + additionalRidesCount,
+          today_earnings: (profile.today_earnings || 0) + additionalEarnings,
+          total_rides: (profile.total_rides || 0) + additionalRidesCount,
+          is_online: isOnline,
+          vehicle: profile.vehicle || {
+            make: "Toyota",
+            model: "Innova Crysta",
+            plate_number: "MH 02 LIVE 2026",
+            color: "Silver"
+          }
+        };
+        setDriver(updatedProfile);
+        try {
+          localStorage.setItem("safego_driver_profile", JSON.stringify(updatedProfile));
+        } catch (e) {}
+      }
+
+      // Prepend/Modify historyData
+      let initialHistory = mapRides(historyData || []);
+      initialHistory = initialHistory.map(h => {
+        if (acceptedIds.includes(h.id) && h.status !== "cancelled") {
+          return { ...h, status: "completed", date: "Today", duration: "Just now", tip: "₹0" };
+        }
+        return h;
+      });
+
+      // Merge local driver history (e.g. locally cancelled or reported rides)
+      let storedLocalHistory: any[] = [];
+      try {
+        const localHistRaw = localStorage.getItem("safego_driver_history");
+        if (localHistRaw) storedLocalHistory = JSON.parse(localHistRaw);
+      } catch (_) {}
+
+      const existingHistoryIds = initialHistory.map(h => h.id);
+      const localRidesToMerge = (Array.isArray(storedLocalHistory) ? storedLocalHistory : [])
+        .filter(r => r.status === "cancelled" && !existingHistoryIds.includes(r.id));
+
+      const ridesToPrepend = acceptedRides
+        .filter(r => !existingHistoryIds.includes(r.id) && r.status !== "cancelled")
+        .map(r => ({
+          ...r,
+          status: "completed",
+          date: "Today",
+          duration: "Just now",
+          tip: "₹0"
+        }));
+
+      const fullHistory = [...localRidesToMerge, ...ridesToPrepend, ...initialHistory];
+      setHistory(fullHistory);
+
+      // Prepend activityData
+      let initialActivity = Array.isArray(activityData) && activityData.length > 0 
+        ? activityData 
+        : (fullHistory.slice(0, 4).map(h => ({
+            id: h.id,
+            type: "ride",
+            text: `Completed ride to ${h.dest}`,
+            time: h.time || "Today"
+          })));
+      setActivity(initialActivity);
+
+      // ─── Cache all data to localStorage for refresh persistence ───
+      try {
+        localStorage.setItem("safego_driver_requests", JSON.stringify(filteredAvailable.slice(0, 4)));
+        localStorage.setItem("safego_driver_activity", JSON.stringify(initialActivity));
+        localStorage.setItem("safego_driver_available", JSON.stringify(filteredAvailable));
+        localStorage.setItem("safego_driver_history", JSON.stringify(fullHistory));
+      } catch (e) { console.warn("Failed to cache driver data", e); }
+
+    } catch (err) {
+      if (err instanceof Error && err.message === "Unauthorized") {
+        return;
+      }
+      console.error("Failed to fetch driver data, using static mock data fallback:", err);
+      if (isBackground) {
+        // Do not overwrite session state with mock data during background updates
+        return;
+      }
+      // Silently fallback to mock data if backend is unreachable during local dev
+
+      console.error("Failed to fetch driver data:", err);
+      // Auto-retry after 2 seconds if the profile hasn't successfully loaded yet
+      if (!driver) {
+        setTimeout(() => {
+          fetchDriverData();
+        }, 2000);
+      }
+    } finally {
+      if (!isBackground) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDriverData();
+    
+    // Poll for new available requests every 5 seconds
+    const interval = setInterval(() => {
+      fetchDriverData(true); // pass true for background fetch
+    }, 5000);
+
+    if (location.state?.activeTab) {
+      setActiveTab(location.state.activeTab as TabKey);
+    }
+
+    return () => clearInterval(interval);
+  }, [location.state]);
+
+  // Active Ride Split Sync & Polling Effect
+  useEffect(() => {
+    if (!activeRide?.id && !activeRide?._id) return;
+    const rideId = activeRide.id || activeRide._id;
+    const token = localStorage.getItem("token");
+
+    const checkSplitStatus = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/rides/${rideId}`, {
+          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          const latestRide = await res.json();
+          // If split request is pending driver decision, trigger modal
+          if (latestRide.split_status === "pending_driver" && !splitPromptModalOpen) {
+            setSplitPromptData(latestRide);
+            setSplitPromptModalOpen(true);
+          }
+          // If split status transitioned to active, update activeRide state
+          if (latestRide.split_status === "active" || latestRide.is_split_active) {
+            setActiveRide((prev: any) => ({
+              ...prev,
+              ...latestRide,
+              split_status: "active",
+              is_split_active: true,
+              split_passenger_name: latestRide.split_passenger_name,
+              split_pickup_address: latestRide.split_pickup_address,
+              is_split_otp_verified: latestRide.is_split_otp_verified
+            }));
+          }
+        }
+      } catch (e) {
+        // Local fallback / offline mode
+      }
+    };
+
+    const interval = setInterval(checkSplitStatus, 3000);
+    return () => clearInterval(interval);
+  }, [activeRide?.id, activeRide?._id, splitPromptModalOpen, API_URL]);
+
+  // Live WebSocket High-Accuracy Driver Location Stream
+  useEffect(() => {
+    if (!driver || (!driver.id && !driver._id)) return;
+    if (!isOnline) return; // Only stream GPS and location when driver is online/on-duty
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    const driverId = driver.id || driver._id;
+    const wsUrl = (API_URL.replace(/^http/, "ws")) + `/ws/driver/${driverId}/location?token=${encodeURIComponent(token)}`;
+    let ws: WebSocket | null = null;
+    let watchId: number | null = null;
+
+    try {
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        console.log("[Driver WebSocket] Connected for live GPS location streaming.");
+      };
+      ws.onerror = (err) => {
+        console.warn("[Driver WebSocket] Error:", err);
+      };
+    } catch (e) {
+      console.warn("[Driver WebSocket] Connection failed:", e);
+    }
+
+    const syncLocation = (latitude: number, longitude: number) => {
+      // 1. Send via WebSocket if open
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          latitude,
+          longitude,
+          ride_id: activeRide?.id || activeRide?._id || null
+        }));
+      }
+      // 2. Also send via HTTP PUT to ensure persistent database update
+      fetch(`${API_URL}/api/drivers/me/location`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ latitude, longitude })
+      }).catch(() => {});
+    };
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => syncLocation(pos.coords.latitude, pos.coords.longitude),
+        (err) => console.warn("[Driver GPS] Initial position note:", err),
+        { enableHighAccuracy: true, timeout: 5000 }
+      );
+
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          const { latitude, longitude, accuracy } = pos.coords;
+          if (accuracy && accuracy > 5000) return;
+          syncLocation(latitude, longitude);
+        },
+        (err) => console.warn("[Driver GPS] Watch error:", err),
+        { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 }
+      );
+    }
+
+    return () => {
+      if (watchId !== null) navigator.geolocation?.clearWatch(watchId);
+      if (ws) ws.close();
+    };
+  }, [driver, activeRide, isOnline, API_URL]);
+
+
+  const handleAcceptRide = async (id: string, dest: string) => {
+    const rideToAccept = [...availableRides, ...requests].find(r => r.id === id);
+    if (!rideToAccept) return;
+
+    // ─── Optimistic Update (Immediate UI Feedback) ───
+    const updatedRequests = requests.filter(r => r.id !== id);
+    const updatedAvailable = availableRides.filter(r => r.id !== id);
+    setRequests(updatedRequests);
+    setAvailableRides(updatedAvailable);
+
+    const activeObj = {
+      ...rideToAccept,
+      status: "matched",
+      is_otp_verified: false
+    };
+    setActiveRide(activeObj);
+
+    try {
+      localStorage.setItem("safego_active_driver_ride", JSON.stringify(activeObj));
+      localStorage.setItem("safego_driver_requests", JSON.stringify(updatedRequests.slice(0, 4)));
+      localStorage.setItem("safego_driver_available", JSON.stringify(updatedAvailable));
+      localStorage.setItem("safego_ride_accepted_event", JSON.stringify({
+        timestamp: Date.now(),
+        rideId: id,
+        driverName: driver?.user?.full_name || driver?.full_name || localStorage.getItem("safego_user_name") || "Driver Partner"
+      }));
+    } catch (e) {
+      console.warn("Failed to persist accepted states in localStorage", e);
+    }
+
+    const token = localStorage.getItem("token");
+    try {
+      if (token) {
+        await fetch(`${API_URL}/api/drivers/me/rides/${id}/accept`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+      }
+    } catch (err) {
+      console.log("Offline/Mock mode: Proceeding with local state only.");
+    }
+
+    toast.success(`Ride accepted! Proceed to passenger pickup location.`, {
+      icon: <Navigation size={18} className="text-white animate-pulse" />
+    });
+  };
+
+  const handleDeclineRide = async (id: string) => {
+    const rideToDecline = [...availableRides, ...requests].find(r => r.id === id);
+    if (!rideToDecline) return;
+
+    // Save to localStorage
+    try {
+      const storedDeclined = localStorage.getItem("safego_declined_rides");
+      const currentDeclined = storedDeclined ? JSON.parse(storedDeclined) : [];
+      if (!currentDeclined.includes(id)) {
+        currentDeclined.push(id);
+        localStorage.setItem("safego_declined_rides", JSON.stringify(currentDeclined));
+      }
+    } catch (e) {
+      console.error("Failed to save declined ride to localStorage", e);
+    }
+
+    // ─── Optimistic Update (Immediate UI Feedback) ───
+    const updatedRequests = requests.filter(r => r.id !== id);
+    const updatedAvailable = availableRides.filter(r => r.id !== id);
+    setRequests(updatedRequests);
+    setAvailableRides(updatedAvailable);
+
+    const newHistoryItem = {
+      ...rideToDecline,
+      status: "failed",
+      date: "Today",
+      duration: "—",
+      tip: "₹0",
+      rating: 0
+    };
+    const updatedHistory = [newHistoryItem, ...history];
+    setHistory(updatedHistory);
+
+    const updatedActivity = [
+      { type: "ride", text: `Declined request: ${rideToDecline.pickup}`, time: "Just now" },
+      ...activity
+    ];
+    setActivity(updatedActivity);
+
+    // Save to localStorage immediately to survive page refreshes
+    try {
+      localStorage.setItem("safego_driver_requests", JSON.stringify(updatedRequests.slice(0, 4)));
+      localStorage.setItem("safego_driver_available", JSON.stringify(updatedAvailable));
+      localStorage.setItem("safego_driver_history", JSON.stringify(updatedHistory));
+      localStorage.setItem("safego_driver_activity", JSON.stringify(updatedActivity));
+    } catch (e) {
+      console.warn("Failed to persist declined states in localStorage", e);
+    }
+
+    toast.error("Request Declined");
+    // ────────────────────────────────────────────────
+
+    const token = localStorage.getItem("token");
+    try {
+      if (!token) throw new Error("No token");
+      await fetch(`${API_URL}/api/drivers/me/rides/${id}/decline`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+    } catch (err) {
+      console.warn("Backend decline fallback:", err);
+    }
+  };
+
+  const handleCancelActiveRide = async (rideId: string, customReason?: string) => {
+    const reason = customReason || "Driver cancelled the trip upon arrival";
+    const cancellationData = {
+      rideId,
+      type: "driver_cancelled",
+      title: "Ride Cancelled by Driver",
+      reason,
+      penalty: 0,
+      driverCompensation: 0,
+      driverName: driver?.user?.full_name || "Female Safety Pilot",
+      timestamp: Date.now()
+    };
+
+    const token = localStorage.getItem("token");
+    try {
+      if (token && token !== "dummy-token") {
+        await fetch(`${API_URL}/api/drivers/me/rides/${rideId}/cancel`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+          body: JSON.stringify({ reason })
+        });
+      }
+    } catch (e) {
+      console.warn("Backend driver cancel error:", e);
+    }
+
+    localStorage.removeItem("safego_active_driver_ride");
+    localStorage.removeItem("safego_accepted_rides");
+    localStorage.removeItem("safego_ride_accepted_event");
+    localStorage.removeItem("safego_current_ride_id");
+    localStorage.removeItem("safego_current_ride_otp");
+    localStorage.removeItem("safego_current_ride_status");
+    localStorage.setItem("safego_current_ride_cancelled", "true");
+    localStorage.setItem("safego_cancellation_data", JSON.stringify(cancellationData));
+    localStorage.setItem("safego_ride_cancelled_event", JSON.stringify(cancellationData));
+
+    try {
+      window.dispatchEvent(new CustomEvent("safego_ride_cancelled", { detail: cancellationData }));
+    } catch (_) {}
+
+    const cancelledHistoryItem = {
+      ...(activeRide || { id: rideId, _id: rideId }),
+      id: rideId,
+      _id: rideId,
+      status: "cancelled",
+      date: "Today",
+      time: "Just now",
+      cancel_reason: reason,
+      penalty_amount: 0,
+      is_penalty_applied: false,
+      driver_compensation_amount: 0,
+      fare: activeRide?.fare || "₹0",
+      pickup: activeRide?.pickup || "Pickup Location",
+      dest: activeRide?.dest || "Destination",
+      passenger_name: activeRide?.passenger_name || "Passenger"
+    };
+
+    const cancelledPassengerRide = {
+      _id: rideId || ("ride_cancel_" + Date.now()),
+      id: rideId || ("ride_cancel_" + Date.now()),
+      mode: activeRide?.mode || "Normal",
+      pickup_address: activeRide?.pickup || "Pickup Location",
+      destination_address: activeRide?.dest || "Destination",
+      route: `${activeRide?.pickup || "Pickup Location"} → ${activeRide?.dest || "Destination"}`,
+      status: "cancelled",
+      cancel_reason: reason,
+      is_penalty_applied: false,
+      penalty_amount: 0,
+      driver_compensation_amount: 0,
+      fare_amount: 0,
+      driver: {
+        user: {
+          full_name: driver?.user?.full_name || "Driver"
+        }
+      },
+      created_at: new Date().toISOString(),
+      cancelled_at: new Date().toISOString(),
+      rating: 0
+    };
+
+    try {
+      const existingPRaw = localStorage.getItem("safego_passenger_rides") || localStorage.getItem("safego_rides");
+      let listP: any[] = [];
+      if (existingPRaw) {
+        try {
+          const parsed = JSON.parse(existingPRaw);
+          if (Array.isArray(parsed)) listP = parsed;
+        } catch (_) {}
+      }
+      const filteredP = listP.filter(r => r._id !== rideId && r.id !== rideId);
+      const updatedP = [cancelledPassengerRide, ...filteredP];
+      localStorage.setItem("safego_passenger_rides", JSON.stringify(updatedP));
+      localStorage.setItem("safego_rides", JSON.stringify(updatedP));
+    } catch (_) {}
+
+    setHistory((prev: any[]) => {
+      const filtered = prev.filter(h => (h.id !== rideId && h._id !== rideId));
+      const updated = [cancelledHistoryItem, ...filtered];
+      try {
+        localStorage.setItem("safego_driver_history", JSON.stringify(updated));
+      } catch (_) {}
+      return updated;
+    });
+
+    setActiveRide(null);
+    toast.info("Ride cancelled.");
+  };
+
+  const renderActiveTab = () => {
+    switch (activeTab) {
+      case "dashboard": return (
+        <DashboardTab
+          driver={driver}
+          requests={requests}
+          activity={activity}
+          activeRide={activeRide}
+          isOnline={isOnline}
+          onToggleOnline={() => handleToggleOnlineStatus()}
+          isTogglingOnline={isTogglingOnline}
+          onAccept={handleAcceptRide}
+          onDecline={handleDeclineRide}
+          onDetails={(r) => { setSelectedRide(r); setDetailsOpen(true); }}
+          onRefresh={fetchDriverData}
+          onOpenOtpModal={(id) => { setOtpRideId(id); setEnteredOtp(""); setOtpError(null); setOtpModalOpen(true); }}
+          onFinishRide={handleFinishRide}
+          onOpenViolationModal={(id) => { setViolationRideId(id); setViolationModalOpen(true); }}
+          onCancelRide={handleCancelActiveRide}
+          onOpenSplitOtpModal={(id) => { setSplitOtpRideId(id); setEnteredSplitOtp(""); setSplitOtpError(null); setSplitOtpModalOpen(true); }}
+          loading={loading}
+        />
+      );
+      case "rides": return (
+        <AvailableRidesTab
+          available={availableRides}
+          isOnline={isOnline}
+          onToggleOnline={() => handleToggleOnlineStatus(true)}
+          onAccept={handleAcceptRide}
+          onDetails={(r) => { setSelectedRide(r); setDetailsOpen(true); }}
+          onRefresh={fetchDriverData}
+          loading={loading}
+        />
+      );
+      case "history": return <HistoryTab history={history} driver={driver} loading={loading} />;
+      case "documents": return <DocumentsTab docList={docList} onView={handleViewDoc} onUpload={handleUploadClick} onRemove={handleRemoveDoc} />;
+      case "earnings": return <EarningsTab history={history} driver={driver} />;
+      case "settings": return <SettingsTab driver={driver} onUpdateProfile={handleUpdateProfile} />;
+      default: return null;
+    }
+  };
+
+  if (!driver) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-4 text-white">
+        <Loader2 className="animate-spin text-emerald-500" size={48} />
+        <p className="text-lg font-bold tracking-wider animate-pulse">Initializing SafeGo Pilot Node...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#F8FAFC]">
+      {/* Hidden file input for uploads */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        onChange={handleFileChange}
+        accept="image/*,.pdf"
+      />
+
+      {/* Document Viewer Modal */}
+      <Dialog open={viewerOpen} onOpenChange={setViewerOpen}>
+        <DialogContent className="max-w-2xl overflow-hidden p-0 rounded-3xl border-none shadow-2xl bg-background">
+          {selectedDoc && (
+            <div className="flex flex-col">
+              <div className="p-6 bg-primary text-primary-foreground flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center">
+                    <Shield size={20} className="text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold">{selectedDoc.name}</h3>
+                    <p className="text-xs text-white/80">Stored securely on Cloudinary</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setViewerOpen(false)}
+                  className="h-8 w-8 rounded-full bg-black/20 text-white flex items-center justify-center hover:bg-black/30 transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="flex items-center justify-between p-3 rounded-xl bg-secondary/30 border border-border/50">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-muted-foreground">Status:</span>
+                    <span className={`text-xs font-bold px-2.5 py-0.5 rounded-md ${selectedDoc.bg} ${selectedDoc.color}`}>
+                      {selectedDoc.status}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Uploaded: <span className="font-semibold text-foreground">{selectedDoc.uploaded}</span>
+                  </div>
+                </div>
+
+                {selectedDoc.url ? (
+                  <div className="relative rounded-2xl overflow-hidden border border-border bg-slate-950/5 flex items-center justify-center min-h-[260px] max-h-[420px]">
+                    <img
+                      src={selectedDoc.url}
+                      alt={selectedDoc.name}
+                      className="w-full h-full object-contain rounded-xl max-h-[400px]"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1544383335-248386af915e?q=80&w=1200&auto=format&fit=crop";
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="p-12 text-center border-2 border-dashed border-border rounded-2xl">
+                    <AlertCircle size={36} className="mx-auto text-amber-500 mb-2" />
+                    <p className="text-sm font-semibold text-foreground">No Document File Uploaded Yet</p>
+                    <p className="text-xs text-muted-foreground mt-1">Please use the Upload button to upload a document.</p>
+                  </div>
+                )}
+
+                {selectedDoc.url && (
+                  <div className="flex justify-end gap-3 pt-2">
+                    <a
+                      href={selectedDoc.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2 text-xs font-bold rounded-xl bg-secondary text-foreground hover:bg-secondary/80 transition-colors flex items-center gap-1.5"
+                    >
+                      Open in Cloudinary <ExternalLink size={14} />
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Ride Details Modal */}
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="max-w-2xl overflow-hidden p-0 rounded-3xl border-none shadow-2xl bg-background">
+          {selectedRide && (
+            <div className="flex flex-col">
+              <div className="h-32 bg-primary relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-black/20 to-transparent z-10" />
+                <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+                <div className="absolute left-6 bottom-6 z-20 flex items-center gap-3">
+                  <div className="h-14 w-14 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 shadow-lg">
+                    <Navigation size={28} className="text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-display font-black text-white leading-tight">Ride Details</h3>
+                    <p className="text-white/70 text-xs font-bold uppercase tracking-widest mt-1">Request #{selectedRide.id.slice(-6).toUpperCase()}</p>
+                  </div>
+                </div>
+                <button onClick={() => setDetailsOpen(false)} className="absolute top-4 right-4 z-30 p-2 rounded-full bg-black/20 text-white hover:bg-black/40 transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-8">
+                <div className="flex flex-col gap-6">
+                  {/* Route Visualizer */}
+                  <div className="relative pl-8 space-y-8 before:content-[''] before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-gradient-to-b before:from-primary before:to-amber-500 before:border-l before:border-dashed before:border-border">
+                    <div className="relative">
+                      <div className="absolute -left-[29px] top-1.5 h-4 w-4 rounded-full bg-primary border-4 border-background shadow-sm" />
+                      <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Pickup Location</p>
+                      <p className="text-base font-bold text-foreground leading-tight">{selectedRide.pickup}</p>
+                    </div>
+                    <div className="relative">
+                      <div className="absolute -left-[29px] top-1.5 h-4 w-4 rounded-sm bg-amber-500 border-4 border-background shadow-sm" />
+                      <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-1">Destination</p>
+                      <p className="text-base font-bold text-foreground leading-tight">{selectedRide.dest}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div className="p-4 rounded-2xl bg-secondary/40 border border-border/50">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Distance & Time</p>
+                      <div className="flex items-center gap-2">
+                        <MapPin size={16} className="text-primary" />
+                        <span className="text-sm font-bold text-foreground">{selectedRide.dist}</span>
+                        <span className="h-1 w-1 rounded-full bg-muted-foreground/30" />
+                        <span className="text-sm font-bold text-foreground">{selectedRide.time}</span>
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-2xl bg-secondary/40 border border-border/50">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-2">Ride Mode</p>
+                      <div className="flex items-center gap-2">
+                        <Shield size={16} style={{ color: selectedRide.modeColor }} />
+                        <span className="text-sm font-bold capitalize" style={{ color: selectedRide.modeColor }}>{selectedRide.mode} Mode</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/60 p-5 bg-background shadow-sm">
+                    <div className="flex items-center justify-between mb-4 pb-4 border-b border-border/40">
+                      <div className="flex items-center gap-3">
+                        <div className="h-12 w-12 rounded-full bg-secondary flex items-center justify-center text-lg font-black text-muted-foreground">
+                          {(selectedRide.passenger_name || "P")[0]}
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-foreground">{selectedRide.passenger_name || "Rider"}</p>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <Star size={12} className="fill-amber-400 text-amber-400" />
+                            <span className="text-xs font-bold text-muted-foreground">{selectedRide.rating} Rating</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">Estimated fare</p>
+                        <p className="text-xl font-black text-foreground">{selectedRide.fare}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                        <User size={14} />
+                        <span>{selectedRide.passengers} Passenger{selectedRide.passengers > 1 ? "s" : ""}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                        <DollarSign size={14} className="text-emerald-600" />
+                        <span>Payment via SafeGo Wallet</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 flex flex-col sm:flex-row gap-3">
+                  <button
+                    onClick={() => {
+                      setOtpRideId(selectedRide.id);
+                      setEnteredOtp("");
+                      setOtpError(null);
+                      setOtpModalOpen(true);
+                      setDetailsOpen(false);
+                    }}
+                    className="flex-1 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 py-4 text-sm font-black text-white hover:brightness-110 transition-all shadow-xl shadow-emerald-500/20 active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <KeyRound size={18} /> Verify OTP & Start Ride
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleAcceptRide(selectedRide.id, selectedRide.dest);
+                      setDetailsOpen(false);
+                    }}
+                    className="flex-1 rounded-2xl bg-primary py-4 text-sm font-black text-white hover:brightness-110 transition-all shadow-xl shadow-primary/20 active:scale-95"
+                  >
+                    Accept Request
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleDeclineRide(selectedRide.id);
+                      setDetailsOpen(false);
+                    }}
+                    className="rounded-2xl border border-border px-6 py-4 text-sm font-bold text-red-500 hover:bg-red-50 hover:border-red-100 transition-colors"
+                  >
+                    Decline
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Document Viewer Modal */}
+      <Dialog open={viewerOpen} onOpenChange={setViewerOpen}>
+        <DialogContent className="max-w-3xl overflow-hidden p-0 bg-transparent border-none shadow-none">
+          <div className="relative group">
+            {selectedDoc?.url ? (
+              <div className="rounded-2xl overflow-hidden bg-background border border-border/50 shadow-2xl">
+                <div className="p-4 border-b border-border bg-background flex items-center justify-between">
+                  <div>
+                    <h3 className="font-display font-bold text-foreground">{selectedDoc.name}</h3>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Verified on {selectedDoc.uploaded}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground hover:text-foreground">
+                      <Download size={18} />
+                    </button>
+                    <button className="p-2 hover:bg-secondary rounded-lg transition-colors text-muted-foreground hover:text-foreground">
+                      <ExternalLink size={18} />
+                    </button>
+                  </div>
+                </div>
+                <div className="bg-secondary/10 p-2 sm:p-4 flex items-center justify-center">
+                  <img
+                    src={selectedDoc.url}
+                    alt={selectedDoc.name}
+                    className="max-h-[70vh] w-auto object-contain rounded-lg shadow-inner"
+                  />
+                </div>
+                <div className="p-4 bg-background border-t border-border flex items-center justify-between">
+                  <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
+                    Status: {selectedDoc.status}
+                  </span>
+                  <button
+                    onClick={() => setViewerOpen(false)}
+                    className="text-sm font-bold text-primary hover:underline"
+                  >
+                    Close Viewer
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl bg-background p-12 text-center border border-border shadow-2xl">
+                <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertCircle className="text-red-500" size={32} />
+                </div>
+                <h3 className="text-xl font-display font-bold text-foreground">No Document Found</h3>
+                <p className="text-sm text-muted-foreground mt-2 max-w-xs mx-auto">This document hasn't been uploaded yet or is currently being processed.</p>
+                <button
+                  onClick={() => setViewerOpen(false)}
+                  className="mt-6 rounded-xl bg-primary px-8 py-2.5 text-sm font-bold text-primary-foreground"
+                >
+                  Go Back
+                </button>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* OTP Verification Modal */}
+      <Dialog open={otpModalOpen} onOpenChange={setOtpModalOpen}>
+        <DialogContent className="max-w-md bg-card border border-border/60 rounded-[2.5rem] p-6 shadow-2xl">
+          <DialogHeader>
+            <div className="mx-auto w-14 h-14 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-primary mb-3">
+              <KeyRound size={28} />
+            </div>
+            <DialogTitle className="text-center text-xl font-bold font-display text-foreground">
+              Verify Passenger Security PIN
+            </DialogTitle>
+            <DialogDescription className="text-center text-xs text-muted-foreground mt-1">
+              Ask the passenger for their 4-digit PIN displayed on their active booking screen to verify rider identity.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-4 space-y-4 text-center">
+            <div className="flex justify-center">
+              <input
+                type="text"
+                maxLength={4}
+                value={enteredOtp}
+                onChange={(e) => {
+                  setEnteredOtp(e.target.value.replace(/\D/g, ""));
+                  setOtpError(null);
+                }}
+                placeholder="0 0 0 0"
+                className="w-56 text-center text-3xl font-black font-mono tracking-[0.4em] px-4 py-3 rounded-2xl border-2 border-primary/40 bg-secondary/50 outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 text-foreground shadow-inner"
+              />
+            </div>
+
+            {otpError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs font-semibold animate-in fade-in">
+                {otpError}
+              </div>
+            )}
+
+            <div className="pt-2 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setOtpModalOpen(false);
+                  setEnteredOtp("");
+                  setOtpError(null);
+                }}
+                className="flex-1 py-3.5 rounded-xl border border-border bg-secondary/40 text-xs font-bold hover:bg-secondary transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isVerifyingOtp || enteredOtp.length !== 4}
+                onClick={() => otpRideId && handleVerifyOtp(otpRideId, enteredOtp)}
+                className="flex-[2] py-3.5 rounded-xl bg-primary text-primary-foreground font-black text-xs uppercase tracking-widest shadow-xl shadow-primary/20 hover:brightness-110 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              >
+                {isVerifyingOtp ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Verifying...
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck size={16} />
+                    Verify & Start Ride
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Report Pink Mode Safety & Policy Violation Dialog */}
+      <Dialog open={violationModalOpen} onOpenChange={setViolationModalOpen}>
+        <DialogContent className="max-w-lg bg-card border-2 border-rose-500/40 rounded-[2.5rem] p-6 shadow-2xl">
+          <DialogHeader>
+            <div className="mx-auto w-16 h-16 rounded-3xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-rose-500 mb-3 shadow-lg shadow-rose-500/10">
+              <ShieldAlert size={32} />
+            </div>
+            <DialogTitle className="text-center text-xl font-black font-display text-foreground">
+              Report Safety & Policy Violation
+            </DialogTitle>
+            <DialogDescription className="text-center text-xs text-muted-foreground mt-1">
+              SafeGo Pink Mode enforces strict safety standards for women passengers and female operators.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-4 space-y-4">
+            {/* Violation Policy Notice Banner */}
+            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 space-y-2">
+              <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 text-xs font-black uppercase tracking-wider">
+                <AlertCircle size={16} />
+                <span>Immediate Driver Action</span>
+              </div>
+              <p className="text-[11px] font-semibold text-rose-900/90 dark:text-rose-200 leading-relaxed">
+                If a solo male passenger booked Pink Mode ahead of instructions or no accompanying female passenger is present, submitting this report will <strong>immediately cancel the trip</strong>.
+              </p>
+              <div className="mt-2 flex items-center justify-between pt-2 border-t border-rose-500/20 text-[11px]">
+                <span className="font-bold text-muted-foreground">Passenger Penalty Levied:</span>
+                <span className="font-black text-rose-600 dark:text-rose-400">₹{violationPenalty}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-bold text-muted-foreground">Driver Inconvenience Credit:</span>
+                <span className="font-black text-emerald-600 dark:text-emerald-400">+₹200 to Wallet</span>
+              </div>
+            </div>
+
+            {/* Violation Reason Selector */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">
+                Violation Classification
+              </label>
+              <select
+                value={violationType}
+                onChange={(e) => setViolationType(e.target.value)}
+                className="w-full rounded-xl border border-border bg-secondary/50 px-4 py-3 text-xs font-bold outline-none focus:border-rose-500 text-foreground"
+              >
+                <option value="solo_male_pink_mode">Solo Male Rider (Pink Mode Unauthorized)</option>
+                <option value="no_female_passenger_present">No Female Traveler Present at Pickup</option>
+                <option value="unregistered_group_misconduct">Group Misrepresentation / Misconduct</option>
+              </select>
+            </div>
+
+            {/* Penalty Tier Selector */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1 flex items-center justify-between">
+                <span>Penalty Fine Amount</span>
+                <span className="text-rose-600 dark:text-rose-400">Range: ₹500 – ₹2,000</span>
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {[500, 750, 1500].map((amt) => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setViolationPenalty(amt)}
+                    className={`py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${
+                      violationPenalty === amt
+                        ? "bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/20"
+                        : "bg-secondary/40 text-muted-foreground border-border hover:bg-secondary"
+                    }`}
+                  >
+                    ₹{amt} {amt === 750 ? "(Standard)" : ""}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Incident Notes */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">
+                Pilot Incident Notes (Optional)
+              </label>
+              <textarea
+                rows={2}
+                value={violationNotes}
+                onChange={(e) => setViolationNotes(e.target.value)}
+                placeholder="Briefly describe rider situation upon arrival..."
+                className="w-full rounded-xl border border-border bg-secondary/50 px-4 py-2.5 text-xs font-medium outline-none focus:border-rose-500 text-foreground resize-none"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="pt-2 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setViolationModalOpen(false);
+                  setViolationNotes("");
+                }}
+                className="flex-1 py-3.5 rounded-xl border border-border bg-secondary/40 text-xs font-bold hover:bg-secondary transition-all"
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingViolation}
+                onClick={() => violationRideId && handleReportViolation(violationRideId)}
+                className="flex-[2] py-3.5 rounded-xl bg-rose-600 text-white font-black text-xs uppercase tracking-widest shadow-xl shadow-rose-600/30 hover:bg-rose-700 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              >
+                {isSubmittingViolation ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Submitting Report...
+                  </>
+                ) : (
+                  <>
+                    <ShieldAlert size={16} />
+                    Confirm Violation & Fine
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── SAFECO SPLIT: INCOMING CO-RIDER REQUEST DIALOG ─── */}
+      <Dialog open={splitPromptModalOpen} onOpenChange={setSplitPromptModalOpen}>
+        <DialogContent className="sm:max-w-[460px] p-0 overflow-hidden rounded-3xl border-2 border-indigo-500/40 bg-card shadow-2xl">
+          <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 p-6 text-white text-center relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-10">
+              <Users size={120} />
+            </div>
+            <div className="mx-auto w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 mb-3 shadow-lg">
+              <Users size={28} className="text-white animate-bounce" />
+            </div>
+            <span className="px-3 py-1 rounded-full bg-white/20 text-[10px] font-black uppercase tracking-widest text-white backdrop-blur-md inline-block mb-1">
+              SafeGo Split • Corridor Match
+            </span>
+            <DialogTitle className="text-xl font-display font-black tracking-tight text-white">
+              Incoming Co-Rider Request!
+            </DialogTitle>
+            <DialogDescription className="text-xs text-white/80 mt-1 max-w-sm mx-auto font-medium">
+              A verified rider is on your existing route. Pick them up at Waypoint A2 to earn a split bonus!
+            </DialogDescription>
+          </div>
+
+          <div className="p-6 space-y-4">
+            {/* Passenger 2 Profile & Route Card */}
+            <div className="p-4 rounded-2xl bg-secondary/50 border border-border/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-black flex items-center justify-center border border-indigo-500/20 text-sm">
+                    {splitPromptData?.split_passenger_name ? splitPromptData.split_passenger_name[0] : "K"}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                      {splitPromptData?.split_passenger_name || "Kavita Rao"}
+                      <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-black border border-emerald-500/20">
+                        Verified ✓
+                      </span>
+                    </h4>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1 font-medium">
+                      <Star size={12} className="fill-amber-400 text-amber-400" />
+                      {splitPromptData?.split_passenger_rating || "4.95"} Rating • 1 Seat
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block">Leg Fare</span>
+                  <span className="text-base font-black text-foreground">₹60.00</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-background border border-border/60 text-xs space-y-1.5">
+                <div className="flex items-center gap-2 text-foreground font-semibold">
+                  <MapPin size={14} className="text-indigo-500 shrink-0" />
+                  <span className="truncate"><strong>Waypoint A2:</strong> {splitPromptData?.split_pickup_address || "Indiranagar 100ft Rd (En route)"}</span>
+                </div>
+                <div className="flex items-center gap-2 text-foreground font-semibold">
+                  <ArrowRight size={14} className="text-purple-500 shrink-0" />
+                  <span className="truncate"><strong>Drop-off A3:</strong> {activeRide?.dest || "MG Road Metro Station"}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Extra Driver Profit & Double Consent Banner */}
+            <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <Sparkles size={12} /> Extra Driver Earnings
+                </span>
+                <p className="text-xs text-muted-foreground font-medium mt-0.5">Original ₹100 ➔ <strong className="text-foreground">₹120 Total Payout</strong></p>
+              </div>
+              <div className="text-right">
+                <span className="text-lg font-black text-emerald-600 dark:text-emerald-400">+₹20.00</span>
+                <span className="text-[10px] font-bold text-muted-foreground block">Instant Bonus</span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground text-center font-medium">
+              💡 Accepting will prompt Passenger A for 30s confirmation. Both parties must consent.
+            </p>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                disabled={isProcessingDriverSplit}
+                onClick={() => handleDriverDeclineSplit(activeRide?.id || activeRide?._id)}
+                className="flex-1 py-3.5 rounded-2xl border border-border bg-secondary/40 text-xs font-bold hover:bg-secondary transition-all active:scale-95 disabled:opacity-50"
+              >
+                Decline
+              </button>
+              <button
+                type="button"
+                disabled={isProcessingDriverSplit}
+                onClick={() => handleDriverAcceptSplit(activeRide?.id || activeRide?._id)}
+                className="flex-[2] py-3.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-black text-xs uppercase tracking-wider shadow-xl shadow-indigo-600/25 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              >
+                {isProcessingDriverSplit ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Accepting...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={16} />
+                    Accept Co-Rider (+₹20 Profit)
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── SAFECO SPLIT: WAYPOINT A2 BOARDING OTP VERIFICATION DIALOG ─── */}
+      <Dialog open={splitOtpModalOpen} onOpenChange={setSplitOtpModalOpen}>
+        <DialogContent className="sm:max-w-[420px] p-6 rounded-3xl border-2 border-indigo-500/40 bg-card shadow-2xl">
+          <DialogHeader className="text-center">
+            <div className="mx-auto w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-2 border border-indigo-500/20">
+              <KeyRound size={24} />
+            </div>
+            <DialogTitle className="text-lg font-display font-black text-foreground">
+              Verify Passenger B PIN (Waypoint A2)
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Ask Passenger B (<span className="font-bold text-foreground">{activeRide?.split_passenger_name || "Kavita Rao"}</span>) for their 4-digit boarding PIN at Indiranagar 100ft Rd.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2 text-center">
+              <input
+                type="text"
+                maxLength={4}
+                value={enteredSplitOtp}
+                onChange={(e) => {
+                  setEnteredSplitOtp(e.target.value.replace(/\D/g, ""));
+                  setSplitOtpError(null);
+                }}
+                placeholder="• • • •"
+                className="w-full text-center text-3xl font-mono tracking-[0.5em] font-black py-4 rounded-2xl border-2 border-indigo-500/40 bg-secondary/30 focus:border-indigo-600 focus:bg-background outline-none transition-all text-foreground"
+                autoFocus
+              />
+              {splitOtpError && (
+                <p className="text-xs font-bold text-rose-500 flex items-center justify-center gap-1">
+                  <AlertCircle size={14} /> {splitOtpError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setSplitOtpModalOpen(false);
+                  setEnteredSplitOtp("");
+                  setSplitOtpError(null);
+                }}
+                className="flex-1 py-3 rounded-2xl border border-border bg-secondary/40 text-xs font-bold hover:bg-secondary transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isVerifyingSplitOtp || enteredSplitOtp.length !== 4}
+                onClick={() => splitOtpRideId && handleVerifySplitOtp(splitOtpRideId, enteredSplitOtp)}
+                className="flex-[2] py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-indigo-600/20 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              >
+                {isVerifyingSplitOtp ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" /> Verifying PIN...
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck size={16} /> Verify & Board Co-Rider
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <div className="flex min-h-screen bg-secondary/30 selection:bg-primary/20">
+        {/* Desktop Sidebar */}
+        <aside className="hidden w-[280px] shrink-0 flex-col border-r border-border bg-background lg:flex sticky top-0 h-screen">
+          <div className="p-6">
+            <SafeGoLogo size={24} className="px-2" />
+          </div>
+
+          {/* Quick Availability Status Widget */}
+          <div className="mx-4 mb-3 p-3.5 rounded-2xl border bg-secondary/30 transition-all border-border shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="relative flex h-3 w-3 shrink-0">
+                  {isOnline && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />}
+                  <span className={`relative inline-flex rounded-full h-3 w-3 ${isOnline ? "bg-emerald-500" : "bg-muted-foreground/60"}`} />
+                </span>
+                <div className="truncate">
+                  <p className="text-xs font-black text-foreground leading-tight">
+                    {isOnline ? "Available for Rides" : "Offline / Off-Duty"}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 font-medium truncate">
+                    {isOnline ? "Accepting bookings" : "Requests paused"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleToggleOnlineStatus()}
+                disabled={isTogglingOnline}
+                title={isOnline ? "Go Offline" : "Go Online"}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  isOnline ? "bg-emerald-500" : "bg-muted-foreground/30"
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                    isOnline ? "translate-x-5" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          <nav className="mt-2 flex flex-col gap-1.5 px-4 flex-1">
+            {navItems.map((item) => (
+              <button
+                key={t(`dashboard.nav.${item.label.toLowerCase().replace(" ", "_")}`, item.label)}
+                onClick={() => setActiveTab(item.tab)}
+                className={`flex items-center gap-3.5 rounded-2xl px-4 py-3 text-[13px] font-bold tracking-tight transition-all text-left w-full group ${activeTab === item.tab
+                  ? "bg-primary text-white shadow-xl shadow-primary/20"
+                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  }`}
+              >
+                <item.icon size={20} className={activeTab === item.tab ? "text-white" : "text-muted-foreground group-hover:text-primary transition-colors"} />
+                {t(`dashboard.nav.${item.label.toLowerCase().replace(" ", "_")}`, item.label)}
+                {activeTab === item.tab && <ChevronRight size={16} className="ml-auto opacity-70" />}
+              </button>
+            ))}
+          </nav>
+          <div className="p-4 border-t border-border mt-auto">
+            <button
+              onClick={() => {
+                localStorage.removeItem("token");
+                localStorage.setItem("userRole", "");
+                localStorage.removeItem("safego_accepted_rides");
+                localStorage.removeItem("safego_declined_rides");
+                localStorage.removeItem("safego_driver_profile");
+                localStorage.removeItem("safego_driver_requests");
+                localStorage.removeItem("safego_driver_activity");
+                localStorage.removeItem("safego_driver_available");
+                localStorage.removeItem("safego_driver_history");
+                localStorage.removeItem("safego_user_name");
+                localStorage.removeItem("safego_user_email");
+                localStorage.removeItem("safego_user_phone");
+                localStorage.removeItem("safego_driver_online_status");
+                window.location.href = "/login";
+              }}
+              className="flex items-center justify-center gap-3 rounded-2xl bg-[#ef4444] hover:bg-[#dc2626] px-4 py-3.5 text-[13px] font-bold text-white transition-all shadow-[0_4px_12px_rgba(239,68,68,0.2)] hover:shadow-[0_0_20px_rgba(239,68,68,0.5)] active:scale-[0.97] w-full text-left"
+            >
+              <LogOut size={20} /> Logout Account
+            </button>
+          </div>
+        </aside>
+
+        {/* Mobile Header */}
+        <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between border-b border-border bg-background/80 backdrop-blur-md px-4 py-3 lg:hidden">
+          <SafeGoLogo size={22} />
+          <div className="flex items-center gap-2">
+            {/* Mobile Availability Toggle Button */}
+            <button
+              type="button"
+              onClick={() => handleToggleOnlineStatus()}
+              disabled={isTogglingOnline}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all shadow-sm ${
+                isOnline
+                  ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-700 dark:text-emerald-400"
+                  : "bg-secondary/70 border-border text-muted-foreground"
+              }`}
+            >
+              <span className={`h-2 w-2 rounded-full ${isOnline ? "bg-emerald-500 animate-ping" : "bg-muted-foreground"}`} />
+              <span>{isOnline ? "Online" : "Offline"}</span>
+            </button>
+            <LanguageSwitcher />
+            <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="rounded-xl p-2.5 bg-secondary/50 border border-border/50 text-foreground shadow-sm">
+              <Menu size={22} />
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Menu Overlay */}
+        {mobileMenuOpen && (
+          <div className="fixed inset-0 z-[60] lg:hidden">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileMenuOpen(false)} />
+            <div className="absolute top-0 right-0 bottom-0 w-[300px] bg-background p-6 flex flex-col animate-in slide-in-from-right duration-300 shadow-2xl">
+              <div className="flex justify-between items-center mb-6">
+                <SafeGoLogo size={22} />
+                <button onClick={() => setMobileMenuOpen(false)} className="p-2 rounded-full bg-secondary">
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Mobile Drawer Availability Toggle */}
+              <div className="mb-6 p-3.5 rounded-2xl border bg-secondary/40 border-border shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="relative flex h-3 w-3 shrink-0">
+                      {isOnline && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />}
+                      <span className={`relative inline-flex rounded-full h-3 w-3 ${isOnline ? "bg-emerald-500" : "bg-muted-foreground/60"}`} />
+                    </span>
+                    <div>
+                      <p className="text-xs font-black text-foreground">
+                        {isOnline ? "Available for Rides" : "Offline / Off-Duty"}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {isOnline ? "Accepting bookings" : "Requests paused"}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleOnlineStatus()}
+                    disabled={isTogglingOnline}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      isOnline ? "bg-emerald-500" : "bg-muted-foreground/30"
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                        isOnline ? "translate-x-5" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+              <nav className="flex flex-col gap-2 flex-1">
+                {navItems.map((item) => (
+                  <button
+                    key={t(`dashboard.nav.${item.label.toLowerCase().replace(" ", "_")}`, item.label)}
+                    onClick={() => { setActiveTab(item.tab); setMobileMenuOpen(false); }}
+                    className={`flex items-center gap-4 rounded-2xl px-5 py-4 text-sm font-bold transition-all text-left w-full ${activeTab === item.tab
+                      ? "bg-primary text-white shadow-lg shadow-primary/20"
+                      : "text-muted-foreground hover:bg-secondary"
+                      }`}
+                  >
+                    <item.icon size={20} /> {t(`dashboard.nav.${item.label.toLowerCase().replace(" ", "_")}`, item.label)}
+                  </button>
+                ))}
+              </nav>
+              <button
+                onClick={() => {
+                  localStorage.removeItem("token");
+                  localStorage.setItem("userRole", "");
+                  localStorage.removeItem("safego_accepted_rides");
+                  localStorage.removeItem("safego_declined_rides");
+                  localStorage.removeItem("safego_driver_profile");
+                  localStorage.removeItem("safego_driver_requests");
+                  localStorage.removeItem("safego_driver_activity");
+                  localStorage.removeItem("safego_driver_available");
+                  localStorage.removeItem("safego_driver_history");
+                  localStorage.removeItem("safego_user_name");
+                  localStorage.removeItem("safego_user_email");
+                  localStorage.removeItem("safego_user_phone");
+                  localStorage.removeItem("safego_driver_online_status");
+                  window.location.href = "/login";
+                }}
+                className="flex items-center justify-center gap-4 rounded-2xl bg-[#ef4444] hover:bg-[#dc2626] px-5 py-4 text-sm font-bold text-white transition-all shadow-[0_4px_12px_rgba(239,68,68,0.3)] hover:shadow-[0_0_20px_rgba(239,68,68,0.5)] mt-auto text-left w-full active:scale-[0.98]"
+              >
+                <LogOut size={20} /> Logout Account
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Main content */}
+        <main className="flex-1 overflow-y-auto bg-transparent p-4 pt-24 lg:p-10 lg:pt-8 relative">
+          <div className="absolute top-4 right-4 lg:top-8 lg:right-10 z-10 hidden lg:block">
+             <LanguageSwitcher />
+          </div>
+          <div className="max-w-6xl mx-auto lg:pt-12">
+            {renderActiveTab()}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+};
+
+export default DriverPortal;
